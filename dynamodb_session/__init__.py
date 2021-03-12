@@ -14,11 +14,15 @@ def create_session_id(byte_length: int) -> str:
     return secrets.token_urlsafe(byte_length)
 
 
-def current_datetime(datetime_value: datetime = datetime.now(tz=timezone.utc)) -> datetime:
+def current_datetime(datetime_value: datetime = None) -> datetime:
+    if datetime_value is None:
+        datetime_value = datetime.now(tz=timezone.utc)
     return datetime_value
 
 
-def current_timestamp(datetime_value: datetime = datetime.now(tz=timezone.utc)) -> int:
+def current_timestamp(datetime_value: datetime = None) -> int:
+    if datetime_value is None:
+        datetime_value = datetime.now(tz=timezone.utc)
     return int(datetime_value.timestamp())
 
 
