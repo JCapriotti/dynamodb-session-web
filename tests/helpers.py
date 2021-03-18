@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 import boto3
-from dynamodb_session import SessionCore
+from dynamodb_session_web import SessionCore
 
 DYNAMODB_LOCAL_ENDPOINT = 'http://localhost:8000'
 
@@ -19,8 +19,8 @@ def get_dynamo_record(key, table):
 
 
 def mock_current_timestamp(mocker, val: int):
-    mocker.patch('dynamodb_session.current_timestamp', Mock(return_value=val))
+    mocker.patch('dynamodb_session_web.current_timestamp', Mock(return_value=val))
 
 
 def mock_current_datetime(mocker, val: str):
-    mocker.patch('dynamodb_session.current_datetime', Mock(return_value=val))
+    mocker.patch('dynamodb_session_web.current_datetime', Mock(return_value=val))

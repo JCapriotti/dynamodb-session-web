@@ -1,4 +1,4 @@
-from dynamodb_session import SessionCore
+from dynamodb_session_web import SessionCore
 
 
 def test_default_settings():

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from .helpers import create_test_session, get_dynamo_record, mock_current_timestamp, mock_current_datetime
-from dynamodb_session import SessionNotFoundError, DEFAULT_TTL
+from dynamodb_session_web import SessionNotFoundError, DEFAULT_TTL
 
 future_timestamp = int((datetime.utcnow() + timedelta(days=300)).timestamp())
 

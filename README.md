@@ -1,4 +1,4 @@
-# dynamodb-session
+# dynamodb-web-session
 
 ## 
 
