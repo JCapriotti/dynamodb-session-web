@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 
 import boto3
 
-DEFAULT_TTL = 7200  # two hours
+DEFAULT_IDLE_TIMEOUT = 7200  # two hours
+DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
 DEFAULT_TABLE = 'app_session'
 DEFAULT_SESSION_ID_BYTES = 32
 
@@ -21,19 +22,33 @@ def current_datetime(datetime_value: datetime = None) -> datetime:
 
 
 def current_timestamp(datetime_value: datetime = None) -> int:
-    if datetime_value is None:
-        datetime_value = datetime.now(tz=timezone.utc)
-    return int(datetime_value.timestamp())
+    return int(current_datetime(datetime_value).timestamp())
+
+
+def expiration_datetime(idle_timeout: int, absolute_timeout: int, created: str, accessed: str) -> int:
+    created_dt = datetime.fromisoformat(created)
+    if created_dt.tzname() != 'UTC':
+        raise ValueError("'created' must be UTC ")
+
+    accessed_dt = datetime.fromisoformat(accessed)
+    if accessed_dt.tzname() != 'UTC':
+        raise ValueError("'accessed' must be UTC ")
+
+    absolute_expiration = absolute_timeout + int(created_dt.timestamp())
+    idle_expiration = idle_timeout + int(accessed_dt.timestamp())
+
+    return min(absolute_expiration, idle_expiration)
 
 
 class SessionCore:
     _boto_client = None
 
     def __init__(self, **kwargs):
-        self.sid_byte_length = kwargs.get('session_id_bytes', DEFAULT_SESSION_ID_BYTES)
-        self.session_id = kwargs.get('session_id', create_session_id(self.sid_byte_length))
+        self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
+        self.session_id = str(kwargs.get('session_id', create_session_id(self.sid_byte_length)))
         self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
-        self.ttl = kwargs.get('ttl', DEFAULT_TTL)
+        self.idle_timeout = int(kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT))
+        self.absolute_timeout = int(kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT))
         self.dynamodb_endpoint_url = kwargs.get('dynamodb_endpoint_url', None)
 
         self.loggable_sid = self._loggable_session_id()
@@ -49,7 +64,7 @@ class SessionCore:
         if data is None:
             data = {}
         serialized = json.dumps(data)
-        self._dynamo_set(serialized, True)
+        self._dynamo_set(serialized, modified=True)
 
     def clear(self):
         self._dynamo_remove()
@@ -74,33 +89,38 @@ class SessionCore:
                                                'N': str(current_timestamp())
                                            },
                                        },
-                                       ExpressionAttributeNames={
-                                           '#ttl': 'ttl',
-                                       },
                                        KeyConditionExpression='id = :sid',
-                                       FilterExpression='#ttl > :now',
+                                       FilterExpression='expires > :now',
                                        ConsistentRead=True)
-        if res.get('Items') and len(res.get('Items')) == 1 and res.get('Items')[0]['data']:
-            data = res.get('Items')[0]['data']
-            return data.get('S', '{}')
+        if res.get('Items') and len(res.get('Items')) == 1:
+            self.idle_timeout = int(res.get('Items')[0]['idle_timeout'].get('N', DEFAULT_IDLE_TIMEOUT))
+            self.absolute_timeout = int(res.get('Items')[0]['absolute_timeout'].get('N', DEFAULT_ABSOLUTE_TIMEOUT))
+
+            if res.get('Items')[0]['data']:
+                data = res.get('Items')[0]['data']
+                return data.get('S', '{}')
         else:
             raise SessionNotFoundError(self.loggable_sid)
 
     def _dynamo_set(self, data, modified):
+        current_dt = current_datetime().isoformat()
         fields = {
-            'accessed': {'S': current_datetime().isoformat()},
-            'ttl': {'N': str(current_timestamp() + self.ttl)},
+            'accessed': {'S': current_dt},
+            'expires': {'N': str(current_timestamp() + self.idle_timeout)},
         }
+
         if modified:
+            fields['idle_timeout'] = {'N': str(self.idle_timeout)}
+            fields['absolute_timeout'] = {'N': str(self.absolute_timeout)}
             fields['data'] = {'S': data}
 
         attr_names = {}
         attr_values = {}
-        ud_exp = []
+        update_expression = []
         for k, v in fields.items():
             attr = "#attr_{}".format(k)
             token = ":{}".format(k)
-            ud_exp.append("{} = {}".format(attr, token))
+            update_expression.append("{} = {}".format(attr, token))
             attr_values[token] = v
             attr_names[attr] = k
 
@@ -108,7 +128,9 @@ class SessionCore:
                                        Key={'id': {'S': self.session_id}},
                                        ExpressionAttributeNames=attr_names,
                                        ExpressionAttributeValues=attr_values,
-                                       UpdateExpression='SET {}'.format(', '.join(ud_exp)),
+                                       UpdateExpression='SET '
+                                                        'created = if_not_exists(created, :accessed), '
+                                                        '{}'.format(', '.join(update_expression)),
                                        ReturnValues='NONE')
 
     def boto_client(self):

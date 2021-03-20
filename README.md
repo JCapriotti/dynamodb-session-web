@@ -3,6 +3,7 @@
 ## 
 
 ```shell script
+aws dynamodb delete-table --table-name app_session --endpoint-url http://localhost:8000
 aws dynamodb create-table \
     --attribute-definitions \
         AttributeName=id,AttributeType=S \

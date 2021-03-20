@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import Mock
 
 import boto3
@@ -18,9 +19,5 @@ def get_dynamo_record(key, table):
     return response.get('Item', None)
 
 
-def mock_current_timestamp(mocker, val: int):
-    mocker.patch('dynamodb_session_web.current_timestamp', Mock(return_value=val))
-
-
-def mock_current_datetime(mocker, val: str):
+def mock_current_datetime(mocker, val: datetime):
     mocker.patch('dynamodb_session_web.current_datetime', Mock(return_value=val))
