@@ -1,0 +1,2 @@
+[tool:pytest]
+addopts = --cov=dynamodb_session_web --cov-report term-missing
