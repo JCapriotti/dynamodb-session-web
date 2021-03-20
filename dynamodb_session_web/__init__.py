@@ -44,6 +44,11 @@ class SessionCore:
     _boto_client = None
 
     def __init__(self, **kwargs):
+        if 'ttl' in kwargs:
+            raise RuntimeError
+        if 'session_id_bytes' in kwargs:
+            raise RuntimeError
+
         self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
         self.session_id = str(kwargs.get('session_id', create_session_id(self.sid_byte_length)))
         self.table_name = kwargs.get('table_name', DEFAULT_TABLE)

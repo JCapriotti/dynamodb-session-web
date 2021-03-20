@@ -49,3 +49,18 @@ def test_overridden_settings():
     assert o.idle_timeout == expected_idle_timeout
     assert o.absolute_timeout == expected_absolute_timeout
     assert o.dynamodb_endpoint_url == expected_dynamodb_endpoint_url
+
+
+@pytest.mark.parametrize(
+    'parameter',
+    ['ttl', 'session_id_bytes']
+)
+def test_unexpected_parameters_raise(parameter):
+    """
+    This is a safety-check, mostly for retired parameters (if any)
+    """
+    kw = {
+        parameter: 'foo'
+    }
+    with pytest.raises(RuntimeError):
+        SessionCore(**kw)
