@@ -166,3 +166,17 @@ def test_actual_current_timestamps_are_within_two_seconds_of_now():
 
     assert int(actual_record['expires']) - expected_ttl < 2
     assert datetime.fromisoformat(actual_record['accessed']) - expected_datetime < timedelta(seconds=2)
+
+
+def test_session_id_is_settable_before_load():
+    test_data = {'foo': 'bar'}
+    session = create_test_session()
+    session_id = session.session_id
+
+    session.save(test_data)
+
+    new_session = create_test_session()
+    new_session.session_id = session_id
+    actual_data = new_session.load()
+
+    assert actual_data == test_data

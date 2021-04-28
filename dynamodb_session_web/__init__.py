@@ -54,7 +54,7 @@ class SessionCore:
         self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
         self.idle_timeout = int(kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT))
         self.absolute_timeout = int(kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT))
-        self.dynamodb_endpoint_url = kwargs.get('dynamodb_endpoint_url', None)
+        self.endpoint_url = kwargs.get('endpoint_url', None)
 
         self.loggable_sid = self._loggable_session_id()
 
@@ -140,7 +140,7 @@ class SessionCore:
 
     def boto_client(self):
         if self._boto_client is None:
-            self._boto_client = boto3.client('dynamodb', endpoint_url=self.dynamodb_endpoint_url)
+            self._boto_client = boto3.client('dynamodb', endpoint_url=self.endpoint_url)
 
         return self._boto_client
 

@@ -4,15 +4,15 @@ from unittest.mock import Mock
 import boto3
 from dynamodb_session_web import SessionCore
 
-DYNAMODB_LOCAL_ENDPOINT = 'http://localhost:8000'
+LOCAL_ENDPOINT = 'http://localhost:8000'
 
 
 def create_test_session(**kwargs):
-    return SessionCore(dynamodb_endpoint_url=DYNAMODB_LOCAL_ENDPOINT, **kwargs)
+    return SessionCore(endpoint_url=LOCAL_ENDPOINT, **kwargs)
 
 
 def get_dynamo_record(key, table):
-    dynamodb = boto3.resource('dynamodb', endpoint_url=DYNAMODB_LOCAL_ENDPOINT)
+    dynamodb = boto3.resource('dynamodb', endpoint_url=LOCAL_ENDPOINT)
     table = dynamodb.Table(table)
 
     response = table.get_item(Key={'id': key})
