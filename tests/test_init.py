@@ -15,7 +15,7 @@ def test_default_settings():
     assert o.idle_timeout == 7200
     assert o.absolute_timeout == 43200
     assert len(o.loggable_sid) == 128
-    assert o.dynamodb_endpoint_url is None
+    assert o.endpoint_url is None
 
 
 def test_non_int_idle_timeout_throws():
@@ -41,14 +41,14 @@ def test_overridden_settings():
                     table_name=expected_table_name,
                     idle_timeout=expected_idle_timeout,
                     absolute_timeout=expected_absolute_timeout,
-                    dynamodb_endpoint_url=expected_dynamodb_endpoint_url)
+                    endpoint_url=expected_dynamodb_endpoint_url)
 
     assert o.sid_byte_length == expected_sid_byte_length
     assert o.session_id == expected_session_id
     assert o.table_name == expected_table_name
     assert o.idle_timeout == expected_idle_timeout
     assert o.absolute_timeout == expected_absolute_timeout
-    assert o.dynamodb_endpoint_url == expected_dynamodb_endpoint_url
+    assert o.endpoint_url == expected_dynamodb_endpoint_url
 
 
 @pytest.mark.parametrize(

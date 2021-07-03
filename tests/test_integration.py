@@ -7,176 +7,171 @@ from dynamodb_session_web import SessionNotFoundError, DEFAULT_IDLE_TIMEOUT, DEF
 future_datetime = datetime.utcnow() + timedelta(days=300)
 
 
-def test_dictionary_save_load():
-    test_data = {'foo': 'bar'}
-    session = create_test_session()
+class TestIntegration:
 
-    session.save(test_data)
-    actual_data = session.load()
+    @pytest.fixture(autouse=True)
+    def _dynamodb_local(self, dynamodb_table):
+        return
 
-    assert actual_data == test_data
+    def test_dictionary_save_load(self):
+        test_data = {'foo': 'bar'}
+        session = create_test_session()
 
+        session.save(test_data)
+        actual_data = session.load()
 
-def test_empty_session_saves_loads():
-    session = create_test_session()
+        assert actual_data == test_data
 
-    session.save()
-    actual_data = session.load()
+    def test_empty_session_saves_loads(self):
+        session = create_test_session()
 
-    assert actual_data == {}
+        session.save()
+        actual_data = session.load()
 
+        assert actual_data == {}
 
-def test_load_loads_timeouts():
-    expected_idle_timeout = 10
-    expected_absolute_timeout = 20
-    session = create_test_session(idle_timeout=expected_idle_timeout, absolute_timeout=expected_absolute_timeout)
+    def test_load_loads_timeouts(self):
+        expected_idle_timeout = 10
+        expected_absolute_timeout = 20
+        session = create_test_session(idle_timeout=expected_idle_timeout, absolute_timeout=expected_absolute_timeout)
 
-    session.save()
-    new_session = create_test_session(session_id=session.session_id)
-    new_session.load()
+        session.save()
+        new_session = create_test_session(session_id=session.session_id)
+        new_session.load()
 
-    assert new_session.idle_timeout == expected_idle_timeout
-    assert new_session.absolute_timeout == expected_absolute_timeout
+        assert new_session.idle_timeout == expected_idle_timeout
+        assert new_session.absolute_timeout == expected_absolute_timeout
 
+    def test_new_session_load_raises(self):
+        session = create_test_session()
 
-def test_new_session_load_raises():
-    session = create_test_session()
+        with pytest.raises(SessionNotFoundError) as exc:
+            session.load()
 
-    with pytest.raises(SessionNotFoundError) as exc:
+        assert exc.value.loggable_sid == session.loggable_sid
+
+    def test_expired_session_raises(self, mocker):
+        session = create_test_session()
+        session.save()
+
+        mock_current_datetime(mocker, future_datetime)
+        with pytest.raises(SessionNotFoundError) as exc:
+            session.load()
+
+        assert exc.value.loggable_sid == session.loggable_sid
+
+    def test_save_sets_all_expected_attributes(self, mocker):
+        session = create_test_session()
+        initial_datetime = datetime(1977, 12, 28, 12, 40, 0, 0)
+        mock_current_datetime(mocker, initial_datetime)
+
+        session.save()
+        actual_record = get_dynamo_record(session.session_id)
+
+        assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
+        assert actual_record['accessed'] == initial_datetime.isoformat()
+        assert actual_record['created'] == initial_datetime.isoformat()
+        assert actual_record['idle_timeout'] == DEFAULT_IDLE_TIMEOUT
+        assert actual_record['absolute_timeout'] == DEFAULT_ABSOLUTE_TIMEOUT
+
+    def test_get_updates_accessed_expires_but_not_created(self, mocker):
+        session = create_test_session()
+        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
+        mock_current_datetime(mocker, initial_datetime)
+
+        session.save()
+        actual_record = get_dynamo_record(session.session_id)
+
+        assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
+        assert actual_record['accessed'] == initial_datetime.isoformat()
+        assert actual_record['created'] == initial_datetime.isoformat()
+
+        new_datetime = datetime(2020, 3, 11, 1, 0, 0, 0)
+        mock_current_datetime(mocker, new_datetime)
+
         session.load()
+        actual_record = get_dynamo_record(session.session_id)
 
-    assert exc.value.loggable_sid == session.loggable_sid
+        assert actual_record['expires'] == int(new_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
+        assert actual_record['accessed'] == new_datetime.isoformat()
+        assert actual_record['created'] == initial_datetime.isoformat()
 
+    def test_new_session_object_uses_saved_timeouts_not_defaults(self, mocker):
+        expected_idle_timeout = 10
+        expected_absolute_timeout = 20
+        session = create_test_session(idle_timeout=expected_idle_timeout, absolute_timeout=expected_absolute_timeout)
+        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
+        mock_current_datetime(mocker, initial_datetime)
 
-def test_expired_session_raises(mocker):
-    session = create_test_session()
-    session.save()
+        session.save()
+        actual_record = get_dynamo_record(session.session_id)
 
-    mock_current_datetime(mocker, future_datetime)
-    with pytest.raises(SessionNotFoundError) as exc:
-        session.load()
+        assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
 
-    assert exc.value.loggable_sid == session.loggable_sid
+        new_session = create_test_session(session_id=session.session_id)
+        new_session.load()
+        actual_record = get_dynamo_record(new_session.session_id)
 
+        assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
+        assert actual_record['idle_timeout'] == expected_idle_timeout
+        assert actual_record['absolute_timeout'] == expected_absolute_timeout
 
-def test_save_sets_all_expected_attributes(mocker):
-    session = create_test_session()
-    initial_datetime = datetime(1977, 12, 28, 12, 40, 0, 0)
-    mock_current_datetime(mocker, initial_datetime)
+    def test_changed_timeouts_are_allowed(self, mocker):
+        session = create_test_session()
+        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
+        mock_current_datetime(mocker, initial_datetime)
 
-    session.save()
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
+        session.save()
+        actual_record = get_dynamo_record(session.session_id)
 
-    assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
-    assert actual_record['accessed'] == initial_datetime.isoformat()
-    assert actual_record['created'] == initial_datetime.isoformat()
-    assert actual_record['idle_timeout'] == DEFAULT_IDLE_TIMEOUT
-    assert actual_record['absolute_timeout'] == DEFAULT_ABSOLUTE_TIMEOUT
+        assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
 
+        expected_idle_timeout = 10
+        expected_absolute_timeout = 20
+        new_session = create_test_session(session_id=session.session_id)
+        new_session.idle_timeout = expected_idle_timeout
+        new_session.absolute_timeout = expected_absolute_timeout
 
-def test_get_updates_accessed_expires_but_not_created(mocker):
-    session = create_test_session()
-    initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
-    mock_current_datetime(mocker, initial_datetime)
+        new_session.save()
+        actual_record = get_dynamo_record(new_session.session_id)
 
-    session.save()
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
+        assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
+        assert actual_record['idle_timeout'] == expected_idle_timeout
+        assert actual_record['absolute_timeout'] == expected_absolute_timeout
 
-    assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
-    assert actual_record['accessed'] == initial_datetime.isoformat()
-    assert actual_record['created'] == initial_datetime.isoformat()
+    def test_clear_removes_record(self):
+        session = create_test_session()
+        session.save()
 
-    new_datetime = datetime(2020, 3, 11, 1, 0, 0, 0)
-    mock_current_datetime(mocker, new_datetime)
+        # Check that it was saved first
+        actual_record = get_dynamo_record(session.session_id)
+        assert actual_record['id'] == session.session_id
 
-    session.load()
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
+        session.clear()
 
-    assert actual_record['expires'] == int(new_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
-    assert actual_record['accessed'] == new_datetime.isoformat()
-    assert actual_record['created'] == initial_datetime.isoformat()
+        actual_record = get_dynamo_record(session.session_id)
+        assert actual_record is None
 
+    def test_actual_current_timestamps_are_within_two_seconds_of_now(self):
+        expected_datetime = datetime.now(tz=timezone.utc)
+        expected_ttl = int(datetime.now(tz=timezone.utc).timestamp()) + DEFAULT_IDLE_TIMEOUT
+        session = create_test_session()
+        session.save()
 
-def test_new_session_object_uses_saved_timeouts_not_defaults(mocker):
-    expected_idle_timeout = 10
-    expected_absolute_timeout = 20
-    session = create_test_session(idle_timeout=expected_idle_timeout, absolute_timeout=expected_absolute_timeout)
-    initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
-    mock_current_datetime(mocker, initial_datetime)
+        actual_record = get_dynamo_record(session.session_id)
 
-    session.save()
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
+        assert int(actual_record['expires']) - expected_ttl < 2
+        assert datetime.fromisoformat(actual_record['accessed']) - expected_datetime < timedelta(seconds=2)
 
-    assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
+    def test_session_id_is_settable_before_load(self):
+        test_data = {'foo': 'bar'}
+        session = create_test_session()
+        session_id = session.session_id
 
-    new_session = create_test_session(session_id=session.session_id)
-    new_session.load()
-    actual_record = get_dynamo_record(new_session.session_id, new_session.table_name)
+        session.save(test_data)
 
-    assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
-    assert actual_record['idle_timeout'] == expected_idle_timeout
-    assert actual_record['absolute_timeout'] == expected_absolute_timeout
+        new_session = create_test_session()
+        new_session.session_id = session_id
+        actual_data = new_session.load()
 
-
-def test_changed_timeouts_are_allowed(mocker):
-    session = create_test_session()
-    initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
-    mock_current_datetime(mocker, initial_datetime)
-
-    session.save()
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
-
-    assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
-
-    expected_idle_timeout = 10
-    expected_absolute_timeout = 20
-    new_session = create_test_session(session_id=session.session_id)
-    new_session.idle_timeout = expected_idle_timeout
-    new_session.absolute_timeout = expected_absolute_timeout
-
-    new_session.save()
-    actual_record = get_dynamo_record(new_session.session_id, new_session.table_name)
-
-    assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
-    assert actual_record['idle_timeout'] == expected_idle_timeout
-    assert actual_record['absolute_timeout'] == expected_absolute_timeout
-
-
-def test_clear_removes_record():
-    session = create_test_session()
-    session.save()
-
-    # Check that it was saved first
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
-    assert actual_record['id'] == session.session_id
-
-    session.clear()
-
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
-    assert actual_record is None
-
-
-def test_actual_current_timestamps_are_within_two_seconds_of_now():
-    expected_datetime = datetime.now(tz=timezone.utc)
-    expected_ttl = int(datetime.now(tz=timezone.utc).timestamp()) + DEFAULT_IDLE_TIMEOUT
-    session = create_test_session()
-    session.save()
-
-    actual_record = get_dynamo_record(session.session_id, session.table_name)
-
-    assert int(actual_record['expires']) - expected_ttl < 2
-    assert datetime.fromisoformat(actual_record['accessed']) - expected_datetime < timedelta(seconds=2)
-
-
-def test_session_id_is_settable_before_load():
-    test_data = {'foo': 'bar'}
-    session = create_test_session()
-    session_id = session.session_id
-
-    session.save(test_data)
-
-    new_session = create_test_session()
-    new_session.session_id = session_id
-    actual_data = new_session.load()
-
-    assert actual_data == test_data
+        assert actual_data == test_data
