@@ -20,3 +20,4 @@ aws dynamodb create-table \
     --provisioned-throughput "ReadCapacityUnits=5,WriteCapacityUnits=5" \
     --table-name app_session 
 ```
+'{"id": {"S": "LHrQdqazyT_hOePKB8Eq5D3F2lwOV4BGv69AAuYjUB0"}}'

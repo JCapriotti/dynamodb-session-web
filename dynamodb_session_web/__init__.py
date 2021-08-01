@@ -1,7 +1,10 @@
 import hashlib
 import json
 import secrets
+from abc import ABC, abstractmethod
+from collections import namedtuple
 from datetime import datetime, timezone
+from typing import Generic, Optional, Type, TypeVar
 
 import boto3
 
@@ -9,6 +12,8 @@ DEFAULT_IDLE_TIMEOUT = 7200  # two hours
 DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
 DEFAULT_TABLE = 'app_session'
 DEFAULT_SESSION_ID_BYTES = 32
+
+DynamoData = namedtuple('DynamoData', ['data', 'idle_timeout', 'absolute_timeout'])
 
 
 def create_session_id(byte_length: int) -> str:
@@ -40,55 +45,104 @@ def expiration_datetime(idle_timeout: int, absolute_timeout: int, created: str, 
     return min(absolute_expiration, idle_expiration)
 
 
-class SessionCore:
-    _boto_client = None
-
+class SessionInstanceBase(ABC):
+    @abstractmethod
     def __init__(self, **kwargs):
-        if 'ttl' in kwargs:
-            raise RuntimeError
-        if 'session_id_bytes' in kwargs:
-            raise RuntimeError
-
-        self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
-        self.session_id = str(kwargs.get('session_id', create_session_id(self.sid_byte_length)))
-        self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
+        # TODO Handle non-int and None for timeouts
+        self.session_id = kwargs.get('session_id', None)
         self.idle_timeout = int(kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT))
         self.absolute_timeout = int(kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT))
-        self.endpoint_url = kwargs.get('endpoint_url', None)
 
-        self.loggable_sid = self._loggable_session_id()
+    @abstractmethod
+    def deserialize(self, data):
+        pass
 
-    def _loggable_session_id(self):
+    @abstractmethod
+    def serialize(self):
+        pass
+
+    def loggable_session_id(self):
         return hashlib.sha512(self.session_id.encode()).hexdigest()
 
-    def load(self):
-        data = self._perform_get()
-        return json.loads(data)
 
-    def save(self, data=None):
-        if data is None:
-            data = {}
-        serialized = json.dumps(data)
-        self._dynamo_set(serialized, modified=True)
+class SessionDictInstance(SessionInstanceBase, dict):
+    def __init__(self, **kwargs):
+        self.foo = ''
+        super().__init__(**kwargs)
 
-    def clear(self):
-        self._dynamo_remove()
+    def deserialize(self, data):
+        self.update(json.loads(data))
 
-    def _dynamo_remove(self):
+    def serialize(self):
+        return json.dumps(self)
+
+
+class NullSessionInstance(SessionInstanceBase):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def deserialize(self, data):
+        pass
+
+    def serialize(self):
+        pass
+
+
+SessionInstanceType = TypeVar('SessionInstanceType')
+
+
+class SessionCore(Generic[SessionInstanceType]):
+    _boto_client = None
+
+    def __init__(self, data_type: Type[SessionInstanceType], **kwargs):
+        self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
+        self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
+        self.endpoint_url = kwargs.get('endpoint_url', None)
+        self._data_type = data_type
+
+    def create(self, **kwargs) -> SessionInstanceType:
+        sid = create_session_id(self.sid_byte_length)
+        kwargs['session_id'] = sid
+        session_data_object = self._data_type(**kwargs)
+        dynamo_data = DynamoData(session_data_object.serialize(),
+                                 session_data_object.idle_timeout,
+                                 session_data_object.absolute_timeout)
+        self._dynamo_set(dynamo_data, sid, modified=True)
+        return session_data_object
+
+    def load(self, session_id) -> SessionInstanceType:
+        # TODO Test for NullSession
+        data = self._perform_get(session_id)
+        if data is not None:
+            self._dynamo_set(data, session_id, modified=False)
+            session_object = self._data_type(session_id=session_id,
+                                             idle_timeout=data.idle_timeout,
+                                             absolute_timeout=data.absolute_timeout)
+            session_object.deserialize(data.data)
+            return session_object
+
+        return NullSessionInstance(session_id=session_id)
+
+    def save(self, data: SessionInstanceType):
+        dynamo_data = DynamoData(data.serialize(), data.idle_timeout, data.absolute_timeout)
+        self._dynamo_set(dynamo_data, data.session_id, modified=True)
+
+    def clear(self, session_id):
+        self._dynamo_remove(session_id)
+
+    def _dynamo_remove(self, session_id):
         self.boto_client().delete_item(
             TableName=self.table_name,
-            Key={'id': {'S': self.session_id}})
+            Key={'id': {'S': session_id}})
 
-    def _perform_get(self):
-        data = self._dynamo_get()
-        self._dynamo_set(data, False)
-        return data
+    def _perform_get(self, session_id):
+        return self._dynamo_get(session_id)
 
-    def _dynamo_get(self):
+    def _dynamo_get(self, session_id) -> Optional[DynamoData]:
         res = self.boto_client().query(TableName=self.table_name,
                                        ExpressionAttributeValues={
                                            ':sid': {
-                                               'S': self.session_id,
+                                               'S': session_id,
                                            },
                                            ':now': {
                                                'N': str(current_timestamp())
@@ -98,26 +152,26 @@ class SessionCore:
                                        FilterExpression='expires > :now',
                                        ConsistentRead=True)
         if res.get('Items') and len(res.get('Items')) == 1:
-            self.idle_timeout = int(res.get('Items')[0]['idle_timeout'].get('N', DEFAULT_IDLE_TIMEOUT))
-            self.absolute_timeout = int(res.get('Items')[0]['absolute_timeout'].get('N', DEFAULT_ABSOLUTE_TIMEOUT))
+            idle_timeout = int(res.get('Items')[0]['idle_timeout'].get('N', DEFAULT_IDLE_TIMEOUT))
+            absolute_timeout = int(res.get('Items')[0]['absolute_timeout'].get('N', DEFAULT_ABSOLUTE_TIMEOUT))
 
             if res.get('Items')[0]['data']:
                 data = res.get('Items')[0]['data']
-                return data.get('S', '{}')
+                return DynamoData(data.get('S', '{}'), idle_timeout, absolute_timeout)
         else:
-            raise SessionNotFoundError(self.loggable_sid)
+            return None
 
-    def _dynamo_set(self, data, modified):
+    def _dynamo_set(self, data: DynamoData, session_id, modified):
         current_dt = current_datetime().isoformat()
         fields = {
             'accessed': {'S': current_dt},
-            'expires': {'N': str(current_timestamp() + self.idle_timeout)},
+            'expires': {'N': expiration_datetime(data.idle_timeout, data.absolute_timeout)},
         }
 
         if modified:
-            fields['idle_timeout'] = {'N': str(self.idle_timeout)}
-            fields['absolute_timeout'] = {'N': str(self.absolute_timeout)}
-            fields['data'] = {'S': data}
+            fields['idle_timeout'] = {'N': str(data.idle_timeout)}
+            fields['absolute_timeout'] = {'N': str(data.absolute_timeout)}
+            fields['data'] = {'S': data.data}
 
         attr_names = {}
         attr_values = {}
@@ -130,7 +184,7 @@ class SessionCore:
             attr_names[attr] = k
 
         self.boto_client().update_item(TableName=self.table_name,
-                                       Key={'id': {'S': self.session_id}},
+                                       Key={'id': {'S': session_id}},
                                        ExpressionAttributeNames=attr_names,
                                        ExpressionAttributeValues=attr_values,
                                        UpdateExpression='SET '

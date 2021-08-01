@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-version = f'0.0.1'
+version = f'0.0.2-b1'
 
 setup(name='dynamodb-session-web',
       version=version,

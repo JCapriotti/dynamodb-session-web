@@ -1,66 +1,86 @@
 import pytest
-from dynamodb_session_web import SessionCore
+from dynamodb_session_web import SessionCore, SessionDictInstance, SessionInstanceBase
 
 
-def test_default_settings():
-    expected_byte_length = 32
-    # Base64 of each byte is approximately 1.3 characters
-    expected_sid_min_length = expected_byte_length * 1.2
-    expected_sid_max_length = expected_byte_length * 1.4
-    o = SessionCore()
+class TestSessionInstance:
+    class ChildClass(SessionInstanceBase):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            pass
 
-    assert o.sid_byte_length == 32
-    assert expected_sid_min_length < len(o.session_id) < expected_sid_max_length
-    assert o.table_name == 'app_session'
-    assert o.idle_timeout == 7200
-    assert o.absolute_timeout == 43200
-    assert len(o.loggable_sid) == 128
-    assert o.endpoint_url is None
+        def deserialize(self, data):
+            pass
 
+        def serialize(self):
+            pass
 
-def test_non_int_idle_timeout_throws():
-    with pytest.raises(ValueError):
-        SessionCore(idle_timeout='a')
+    def test_default_settings(self):
+        o = self.ChildClass()
 
+        assert o.session_id is None
+        assert o.idle_timeout == 7200
+        assert o.absolute_timeout == 43200
 
-def test_non_int_absolute_timeout_throws():
-    with pytest.raises(ValueError):
-        SessionCore(absolute_timeout='a')
+    def test_overridden_settings(self):
+        expected_session_id = 1
+        expected_idle_timeout = 4
+        expected_absolute_timeout = 5
 
+        o = self.ChildClass(
+            session_id=expected_session_id,
+            idle_timeout=expected_idle_timeout,
+            absolute_timeout=expected_absolute_timeout,
+        )
 
-def test_overridden_settings():
-    expected_sid_byte_length = 1
-    expected_session_id = '2'
-    expected_table_name = 3
-    expected_idle_timeout = 4
-    expected_absolute_timeout = 5
-    expected_dynamodb_endpoint_url = 6
+        assert o.session_id == expected_session_id
+        assert o.idle_timeout == expected_idle_timeout
+        assert o.absolute_timeout == expected_absolute_timeout
 
-    o = SessionCore(sid_byte_length=expected_sid_byte_length,
-                    session_id=expected_session_id,
-                    table_name=expected_table_name,
-                    idle_timeout=expected_idle_timeout,
-                    absolute_timeout=expected_absolute_timeout,
-                    endpoint_url=expected_dynamodb_endpoint_url)
+    def test_non_int_idle_timeout_throws(self):
+        with pytest.raises(ValueError):
+            self.ChildClass(idle_timeout='a')
 
-    assert o.sid_byte_length == expected_sid_byte_length
-    assert o.session_id == expected_session_id
-    assert o.table_name == expected_table_name
-    assert o.idle_timeout == expected_idle_timeout
-    assert o.absolute_timeout == expected_absolute_timeout
-    assert o.endpoint_url == expected_dynamodb_endpoint_url
+    def test_non_int_absolute_timeout_throws(self):
+        with pytest.raises(ValueError):
+            self.ChildClass(absolute_timeout='a')
 
 
-@pytest.mark.parametrize(
-    'parameter',
-    ['ttl', 'session_id_bytes']
-)
-def test_unexpected_parameters_raise(parameter):
-    """
-    This is a safety-check, mostly for retired parameters (if any)
-    """
-    kw = {
-        parameter: 'foo'
-    }
-    with pytest.raises(RuntimeError):
-        SessionCore(**kw)
+class TestSessionCore:
+    def test_default_settings(self):
+        o = SessionCore(SessionDictInstance)
+
+        assert o.sid_byte_length == 32
+        assert o.table_name == 'app_session'
+        assert o.endpoint_url is None
+
+    @pytest.mark.usefixtures('mock_dynamo_set')
+    def test_create(self):
+        # Base64 of each byte is approximately 1.3 characters
+        expected_sid_min_length = 32 * 1.2
+        expected_sid_max_length = 32 * 1.4
+
+        core_object = SessionCore(SessionDictInstance)
+        instance_object = core_object.create()
+        instance_object.test_m = 'f'
+        actual_sid_length = len(instance_object.session_id)
+
+        assert type(instance_object) is SessionDictInstance
+        assert expected_sid_min_length < actual_sid_length < expected_sid_max_length
+
+    @pytest.mark.usefixtures('mock_dynamo_set')
+    def test_overridden_settings(self):
+        expected_sid_byte_length = 1
+        expected_table_name = 'some name'
+        expected_dynamodb_endpoint_url = 'some URL'
+
+        o = SessionCore(
+            SessionDictInstance,
+            sid_byte_length=expected_sid_byte_length,
+            table_name=expected_table_name,
+            endpoint_url=expected_dynamodb_endpoint_url,
+        )
+
+        assert o.sid_byte_length == expected_sid_byte_length
+        assert o.table_name == expected_table_name
+        assert o.endpoint_url == expected_dynamodb_endpoint_url
+        assert type(o.create()) == SessionDictInstance
