@@ -2,18 +2,25 @@ import hashlib
 import json
 import secrets
 from abc import ABC, abstractmethod
-from collections import namedtuple
 from datetime import datetime, timezone
-from typing import Generic, Optional, Type, TypeVar
+from typing import Any, Generic, NamedTuple, Optional, Type, TypeVar
 
 import boto3
+from botocore.exceptions import ClientError
 
 DEFAULT_IDLE_TIMEOUT = 7200  # two hours
 DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
 DEFAULT_TABLE = 'app_session'
 DEFAULT_SESSION_ID_BYTES = 32
 
-DynamoData = namedtuple('DynamoData', ['data', 'idle_timeout', 'absolute_timeout'])
+SessionInstanceType = TypeVar('SessionInstanceType')
+
+
+class DynamoData(NamedTuple):
+    data: Any
+    idle_timeout: int
+    absolute_timeout: int
+    created: str
 
 
 def create_session_id(byte_length: int) -> str:
@@ -67,7 +74,6 @@ class SessionInstanceBase(ABC):
 
 class SessionDictInstance(SessionInstanceBase, dict):
     def __init__(self, **kwargs):
-        self.foo = ''
         super().__init__(**kwargs)
 
     def deserialize(self, data):
@@ -88,11 +94,9 @@ class NullSessionInstance(SessionInstanceBase):
         pass
 
 
-SessionInstanceType = TypeVar('SessionInstanceType')
-
-
 class SessionCore(Generic[SessionInstanceType]):
     _boto_client = None
+    _dynamodb_table = None
 
     def __init__(self, data_type: Type[SessionInstanceType], **kwargs):
         self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
@@ -106,7 +110,8 @@ class SessionCore(Generic[SessionInstanceType]):
         session_data_object = self._data_type(**kwargs)
         dynamo_data = DynamoData(session_data_object.serialize(),
                                  session_data_object.idle_timeout,
-                                 session_data_object.absolute_timeout)
+                                 session_data_object.absolute_timeout,
+                                 current_datetime().isoformat())
         self._dynamo_set(dynamo_data, sid, modified=True)
         return session_data_object
 
@@ -124,7 +129,8 @@ class SessionCore(Generic[SessionInstanceType]):
         return NullSessionInstance(session_id=session_id)
 
     def save(self, data: SessionInstanceType):
-        dynamo_data = DynamoData(data.serialize(), data.idle_timeout, data.absolute_timeout)
+        created = self._dynamo_get_created(data.session_id)
+        dynamo_data = DynamoData(data.serialize(), data.idle_timeout, data.absolute_timeout, created)
         self._dynamo_set(dynamo_data, data.session_id, modified=True)
 
     def clear(self, session_id):
@@ -154,18 +160,30 @@ class SessionCore(Generic[SessionInstanceType]):
         if res.get('Items') and len(res.get('Items')) == 1:
             idle_timeout = int(res.get('Items')[0]['idle_timeout'].get('N', DEFAULT_IDLE_TIMEOUT))
             absolute_timeout = int(res.get('Items')[0]['absolute_timeout'].get('N', DEFAULT_ABSOLUTE_TIMEOUT))
+            created = res.get('Items')[0]['created'].get('S', current_datetime())
 
             if res.get('Items')[0]['data']:
                 data = res.get('Items')[0]['data']
-                return DynamoData(data.get('S', '{}'), idle_timeout, absolute_timeout)
+                return DynamoData(data.get('S', '{}'), idle_timeout, absolute_timeout, created)
         else:
             return None
+
+    def _dynamo_get_created(self, session_id) -> str:
+        try:
+            response = self.dynamodb_table().get_item(Key={'id': session_id})
+        except ClientError as e:
+            print(e.response['Error']['Message'])
+        else:
+            return response['Item']['created']
 
     def _dynamo_set(self, data: DynamoData, session_id, modified):
         current_dt = current_datetime().isoformat()
         fields = {
             'accessed': {'S': current_dt},
-            'expires': {'N': expiration_datetime(data.idle_timeout, data.absolute_timeout)},
+            'expires': {'N': str(
+                expiration_datetime(data.idle_timeout, data.absolute_timeout, data.created, current_dt)
+            )},
+            'created': {'S': data.created},
         }
 
         if modified:
@@ -188,7 +206,7 @@ class SessionCore(Generic[SessionInstanceType]):
                                        ExpressionAttributeNames=attr_names,
                                        ExpressionAttributeValues=attr_values,
                                        UpdateExpression='SET '
-                                                        'created = if_not_exists(created, :accessed), '
+                                                      #  'created = if_not_exists(created, :created), '
                                                         '{}'.format(', '.join(update_expression)),
                                        ReturnValues='NONE')
 
@@ -197,6 +215,13 @@ class SessionCore(Generic[SessionInstanceType]):
             self._boto_client = boto3.client('dynamodb', endpoint_url=self.endpoint_url)
 
         return self._boto_client
+
+    def dynamodb_table(self):
+        if self._dynamodb_table is None:
+            dynamodb = boto3.resource('dynamodb', endpoint_url=self.endpoint_url)
+            self._dynamodb_table = dynamodb.Table(self.table_name)
+
+        return self._dynamodb_table
 
 
 class SessionNotFoundError(Exception):

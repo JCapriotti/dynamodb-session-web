@@ -2,20 +2,26 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pytest
-from .helpers import create_test_session, get_dynamo_record, mock_current_datetime
 from dynamodb_session_web import NullSessionInstance, SessionDictInstance, SessionInstanceBase, \
     DEFAULT_IDLE_TIMEOUT, DEFAULT_ABSOLUTE_TIMEOUT
+from pytest import param
+from .helpers import create_test_session, get_dynamo_record, mock_current_datetime
 
-future_datetime = datetime.utcnow() + timedelta(days=300)
-
-TEST_KEY = 'foo'
-TEST_VALUE = 'bar'
+FUTURE_DATETIME = datetime.utcnow() + timedelta(days=300)
+EXPECTED_KEY = 'foo'
+EXPECTED_VALUE = 'bar'
+FOUR_HOURS_IN_SECONDS = 14400
+SIX_HOURS_IN_SECONDS = 21600
+NINE_AM = int(datetime(2021, 3, 1, 9, 0, 0, tzinfo=timezone.utc).timestamp())
+TEN_AM = int(datetime(2021, 3, 1, 10, 0, 0, tzinfo=timezone.utc).timestamp())
+ELEVEN_AM = int(datetime(2021, 3, 1, 11, 0, 0, tzinfo=timezone.utc).timestamp())
+FRIENDLY_DT_FORMAT = '%b %d %Y, %I %p'
 
 
 def create_test_data(test_data: Optional[SessionInstanceBase] = None):
     if test_data is None:
         test_data = SessionDictInstance()
-    test_data[TEST_KEY] = TEST_VALUE
+    test_data[EXPECTED_KEY] = EXPECTED_VALUE
     return test_data
 
 
@@ -31,7 +37,7 @@ class TestIntegration:
 
         session.save(test_data)
         actual_data = session.load(test_data.session_id)
-        assert actual_data[TEST_KEY] == TEST_VALUE
+        assert actual_data[EXPECTED_KEY] == EXPECTED_VALUE
 
     def test_load_loads_timeouts(self):
         """
@@ -63,7 +69,7 @@ class TestIntegration:
     def test_expired_session_returns_null_session(self, mocker):
         session = create_test_session()
         session_instance = session.create()
-        mock_current_datetime(mocker, future_datetime)
+        mock_current_datetime(mocker, FUTURE_DATETIME)
 
         actual = session.load(session_instance.session_id)
 
@@ -72,7 +78,7 @@ class TestIntegration:
 
     def test_save_sets_all_expected_attributes(self, mocker):
         session = create_test_session()
-        initial_datetime = datetime(1977, 12, 28, 12, 40, 0, 0)
+        initial_datetime = datetime(1977, 12, 28, 12, 40, 0, 0, tzinfo=timezone.utc)
         mock_current_datetime(mocker, initial_datetime)
 
         session_instance = session.create()
@@ -85,33 +91,93 @@ class TestIntegration:
         assert actual_record['idle_timeout'] == DEFAULT_IDLE_TIMEOUT
         assert actual_record['absolute_timeout'] == DEFAULT_ABSOLUTE_TIMEOUT
 
-    def test_get_updates_accessed_expires_but_not_created(self, mocker):
+    @pytest.mark.parametrize(
+        'created, accessed, exp_expires_post_created, exp_expires_post_accessed', [
+            param('Mar 1 2021, 5 AM', 'Mar 1 2021, 6 AM', NINE_AM, TEN_AM, id='Idle expires before absolute'),
+            param('Mar 1 2021, 5 AM', 'Mar 1 2021, 8 AM', NINE_AM, ELEVEN_AM, id='Absolute causes expiration'),
+        ]
+    )
+    def test_created_accessed_expires_value_for_create_load(self, mocker, created, accessed, exp_expires_post_created,
+                                                            exp_expires_post_accessed):
+        """
+        Tests that accessing a session an hour after creation updates the `accessed` field, but `created` is not
+        affected. `expires` *may* be updated, depending on how close the update is to the timeouts.
+
+        The inputs are roughly the same as in the `test_expiration.test_expiration` test, here we're just making sure
+        the values are persisted and used.
+        """
+        initial_dt = datetime.strptime(created, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
+        accessed_dt = datetime.strptime(accessed, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
+        exp_created = initial_dt.isoformat()
+
         session = create_test_session()
-        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
-        mock_current_datetime(mocker, initial_datetime)
+        mock_current_datetime(mocker, initial_dt)
 
-        session_instance = session.create()
-        actual_record = get_dynamo_record(session_instance.session_id)
+        # Create Test
+        session_instance = session.create(idle_timeout=FOUR_HOURS_IN_SECONDS, absolute_timeout=SIX_HOURS_IN_SECONDS)
+        self.assert_actual_record_values(session_instance.session_id,
+                                         exp_created=exp_created,
+                                         exp_expired=exp_expires_post_created,
+                                         exp_accessed=initial_dt.isoformat())
 
-        assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
-        assert actual_record['accessed'] == initial_datetime.isoformat()
-        assert actual_record['created'] == initial_datetime.isoformat()
-
-        new_datetime = datetime(2020, 3, 11, 1, 0, 0, 0)
-        mock_current_datetime(mocker, new_datetime)
-
+        # Load Test for new datetime
+        mock_current_datetime(mocker, accessed_dt)
         session.load(session_instance.session_id)
-        actual_record = get_dynamo_record(session_instance.session_id)
+        self.assert_actual_record_values(session_instance.session_id,
+                                         exp_created=exp_created,
+                                         exp_expired=exp_expires_post_accessed,
+                                         exp_accessed=accessed_dt.isoformat())
 
-        assert actual_record['expires'] == int(new_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
-        assert actual_record['accessed'] == new_datetime.isoformat()
-        assert actual_record['created'] == initial_datetime.isoformat()
+    @pytest.mark.parametrize(
+        'created, accessed, exp_expires_post_created, exp_expires_post_accessed', [
+            param('Mar 1 2021, 5 AM', 'Mar 1 2021, 6 AM', NINE_AM, TEN_AM, id='Idle expires before absolute'),
+            param('Mar 1 2021, 5 AM', 'Mar 1 2021, 8 AM', NINE_AM, ELEVEN_AM, id='Absolute causes expiration'),
+        ]
+    )
+    def test_created_accessed_expires_value_for_create_save(self, mocker, created, accessed, exp_expires_post_created,
+                                                            exp_expires_post_accessed):
+        """
+        Tests that accessing a session an hour after creation updates the `accessed` field, but `created` is not
+        affected. `expires` *may* be updated, depending on how close the update is to the timeouts.
+
+        The inputs are roughly the same as in the `test_expiration.test_expiration` test, here we're just making sure
+        the values are persisted and used.
+        """
+        initial_dt = datetime.strptime(created, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
+        accessed_dt = datetime.strptime(accessed, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
+        exp_created = initial_dt.isoformat()
+
+        session = create_test_session()
+        mock_current_datetime(mocker, initial_dt)
+
+        # Create Test
+        session_instance = session.create(idle_timeout=FOUR_HOURS_IN_SECONDS, absolute_timeout=SIX_HOURS_IN_SECONDS)
+        self.assert_actual_record_values(session_instance.session_id,
+                                         exp_created=exp_created,
+                                         exp_expired=exp_expires_post_created,
+                                         exp_accessed=initial_dt.isoformat())
+
+        # Load Test for new datetime
+        mock_current_datetime(mocker, accessed_dt)
+        session.save(session_instance)
+        self.assert_actual_record_values(session_instance.session_id,
+                                         exp_created=exp_created,
+                                         exp_expired=exp_expires_post_accessed,
+                                         exp_accessed=accessed_dt.isoformat())
+
+    @staticmethod
+    def assert_actual_record_values(session_id, exp_created, exp_expired, exp_accessed):
+        actual_record = get_dynamo_record(session_id)
+
+        assert actual_record['created'] == exp_created
+        assert actual_record['expires'] == exp_expired
+        assert actual_record['accessed'] == exp_accessed
 
     def test_new_session_object_uses_saved_timeouts_not_defaults(self, mocker):
         expected_idle_timeout = 10
         expected_absolute_timeout = 20
         session = create_test_session()
-        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
+        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0, tzinfo=timezone.utc)
         mock_current_datetime(mocker, initial_datetime)
 
         session_instance = session.create(
@@ -121,18 +187,12 @@ class TestIntegration:
         actual_record = get_dynamo_record(session_instance.session_id)
 
         assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
-
-        new_session = create_test_session()
-        new_session.load(session_instance.session_id)
-        actual_record = get_dynamo_record(session_instance.session_id)
-
-        assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
         assert actual_record['idle_timeout'] == expected_idle_timeout
         assert actual_record['absolute_timeout'] == expected_absolute_timeout
 
     def test_changed_timeouts_are_allowed(self, mocker):
         session = create_test_session()
-        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0)
+        initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0, tzinfo=timezone.utc)
         mock_current_datetime(mocker, initial_datetime)
 
         first_session_data = session.create()
@@ -169,7 +229,7 @@ class TestIntegration:
 
     def test_actual_current_timestamps_are_within_two_seconds_of_now(self):
         expected_datetime = datetime.now(tz=timezone.utc)
-        expected_ttl = int(datetime.now(tz=timezone.utc).timestamp()) + DEFAULT_IDLE_TIMEOUT
+        expected_ttl = int(datetime.now(tz=timezone.utc).timestamp()) + DEFAULT_ABSOLUTE_TIMEOUT
         session = create_test_session()
         session_instance = session.create()
 
