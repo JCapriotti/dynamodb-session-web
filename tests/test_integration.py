@@ -32,6 +32,8 @@ class TestIntegration:
         return
 
     def test_dictionary_save_load(self):
+        import os
+        x = os.getcwd()
         session = create_test_session()
         test_data = create_test_data(session.create())
 
@@ -92,23 +94,27 @@ class TestIntegration:
         assert actual_record['absolute_timeout'] == DEFAULT_ABSOLUTE_TIMEOUT
 
     @pytest.mark.parametrize(
-        'created, accessed, exp_expires_post_created, exp_expires_post_accessed', [
+        'created, accessed, expected_expires_post_created, expected_expires_post_accessed', [
             param('Mar 1 2021, 5 AM', 'Mar 1 2021, 6 AM', NINE_AM, TEN_AM, id='Idle expires before absolute'),
             param('Mar 1 2021, 5 AM', 'Mar 1 2021, 8 AM', NINE_AM, ELEVEN_AM, id='Absolute causes expiration'),
         ]
     )
-    def test_created_accessed_expires_value_for_create_load(self, mocker, created, accessed, exp_expires_post_created,
-                                                            exp_expires_post_accessed):
+    def test_created_accessed_expires_value_for_create_load(
+            self, mocker, created, accessed, expected_expires_post_created, expected_expires_post_accessed):
         """
         Tests that accessing a session an hour after creation updates the `accessed` field, but `created` is not
         affected. `expires` *may* be updated, depending on how close the update is to the timeouts.
+
+        IMPORTANT - Timeouts used are:
+            IDLE     - 4 hours
+            ABSOLUTE - 6 hours
 
         The inputs are roughly the same as in the `test_expiration.test_expiration` test, here we're just making sure
         the values are persisted and used.
         """
         initial_dt = datetime.strptime(created, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
         accessed_dt = datetime.strptime(accessed, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
-        exp_created = initial_dt.isoformat()
+        expected_created = initial_dt.isoformat()
 
         session = create_test_session()
         mock_current_datetime(mocker, initial_dt)
@@ -116,36 +122,40 @@ class TestIntegration:
         # Create Test
         session_instance = session.create(idle_timeout=FOUR_HOURS_IN_SECONDS, absolute_timeout=SIX_HOURS_IN_SECONDS)
         self.assert_actual_record_values(session_instance.session_id,
-                                         exp_created=exp_created,
-                                         exp_expired=exp_expires_post_created,
+                                         exp_created=expected_created,
+                                         exp_expired=expected_expires_post_created,
                                          exp_accessed=initial_dt.isoformat())
 
         # Load Test for new datetime
         mock_current_datetime(mocker, accessed_dt)
         session.load(session_instance.session_id)
         self.assert_actual_record_values(session_instance.session_id,
-                                         exp_created=exp_created,
-                                         exp_expired=exp_expires_post_accessed,
+                                         exp_created=expected_created,
+                                         exp_expired=expected_expires_post_accessed,
                                          exp_accessed=accessed_dt.isoformat())
 
     @pytest.mark.parametrize(
-        'created, accessed, exp_expires_post_created, exp_expires_post_accessed', [
+        'created, accessed, expected_expires_post_created, expected_expires_post_accessed', [
             param('Mar 1 2021, 5 AM', 'Mar 1 2021, 6 AM', NINE_AM, TEN_AM, id='Idle expires before absolute'),
             param('Mar 1 2021, 5 AM', 'Mar 1 2021, 8 AM', NINE_AM, ELEVEN_AM, id='Absolute causes expiration'),
         ]
     )
-    def test_created_accessed_expires_value_for_create_save(self, mocker, created, accessed, exp_expires_post_created,
-                                                            exp_expires_post_accessed):
+    def test_created_accessed_expires_value_for_create_save(
+            self, mocker, created, accessed, expected_expires_post_created, expected_expires_post_accessed):
         """
         Tests that accessing a session an hour after creation updates the `accessed` field, but `created` is not
         affected. `expires` *may* be updated, depending on how close the update is to the timeouts.
+
+        IMPORTANT - Timeouts used are:
+            IDLE     - 4 hours
+            ABSOLUTE - 6 hours
 
         The inputs are roughly the same as in the `test_expiration.test_expiration` test, here we're just making sure
         the values are persisted and used.
         """
         initial_dt = datetime.strptime(created, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
         accessed_dt = datetime.strptime(accessed, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
-        exp_created = initial_dt.isoformat()
+        expected_created = initial_dt.isoformat()
 
         session = create_test_session()
         mock_current_datetime(mocker, initial_dt)
@@ -153,16 +163,16 @@ class TestIntegration:
         # Create Test
         session_instance = session.create(idle_timeout=FOUR_HOURS_IN_SECONDS, absolute_timeout=SIX_HOURS_IN_SECONDS)
         self.assert_actual_record_values(session_instance.session_id,
-                                         exp_created=exp_created,
-                                         exp_expired=exp_expires_post_created,
+                                         exp_created=expected_created,
+                                         exp_expired=expected_expires_post_created,
                                          exp_accessed=initial_dt.isoformat())
 
         # Load Test for new datetime
         mock_current_datetime(mocker, accessed_dt)
         session.save(session_instance)
         self.assert_actual_record_values(session_instance.session_id,
-                                         exp_created=exp_created,
-                                         exp_expired=exp_expires_post_accessed,
+                                         exp_created=expected_created,
+                                         exp_expired=expected_expires_post_accessed,
                                          exp_accessed=accessed_dt.isoformat())
 
     @staticmethod
