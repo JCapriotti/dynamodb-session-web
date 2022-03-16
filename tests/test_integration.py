@@ -1,11 +1,14 @@
+import hashlib
+import json
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pytest
-from dynamodb_session_web import NullSessionInstance, SessionDictInstance, SessionInstanceBase, \
+from dynamodb_session_web import NullSessionInstance, SessionCore, SessionDictInstance, SessionInstanceBase, \
     DEFAULT_IDLE_TIMEOUT, DEFAULT_ABSOLUTE_TIMEOUT
 from pytest import param
-from .helpers import create_test_session, get_dynamo_record, mock_current_datetime
+from .helpers import create_test_session, get_dynamo_record, LOCAL_ENDPOINT, mock_current_datetime
 
 FUTURE_DATETIME = datetime.utcnow() + timedelta(days=300)
 EXPECTED_KEY = 'foo'
@@ -32,14 +35,43 @@ class TestIntegration:
         return
 
     def test_dictionary_save_load(self):
-        import os
-        x = os.getcwd()
         session = create_test_session()
         test_data = create_test_data(session.create())
 
         session.save(test_data)
         actual_data = session.load(test_data.session_id)
         assert actual_data[EXPECTED_KEY] == EXPECTED_VALUE
+
+    def test_example_custom_class(self):
+        """ Test/Example code showing save/load with a custom session data class """
+        @dataclass
+        class MySession(SessionInstanceBase):
+            fruit: str = ''
+            color: str = ''
+
+            def __init__(self, *, session_id: str = None, idle_timeout: int = DEFAULT_IDLE_TIMEOUT,
+                         absolute_timeout: int = DEFAULT_ABSOLUTE_TIMEOUT):
+                super().__init__(session_id=session_id, idle_timeout=idle_timeout, absolute_timeout=absolute_timeout)
+
+            def deserialize(self, data):
+                data_dict = json.loads(data)
+                self.fruit = data_dict['fruit']
+                self.color = data_dict['color']
+
+            def serialize(self):
+                return json.dumps(asdict(self))
+
+        session = SessionCore(MySession, endpoint_url=LOCAL_ENDPOINT)
+        initial_data = session.create()
+        initial_data.fruit = 'apple'
+        initial_data.color = 'red'
+
+        session.save(initial_data)
+        loaded_data = session.load(initial_data.session_id)
+        session.clear(initial_data.session_id)
+
+        assert loaded_data.fruit == initial_data.fruit
+        assert loaded_data.color == initial_data.color
 
     def test_load_loads_timeouts(self):
         """
@@ -62,21 +94,27 @@ class TestIntegration:
     def test_random_session_id_load_returns_null_session(self):
         session = create_test_session()
         sid = 'some_unknown_session_id'
+        expected_loggable_sid = '4ee055b82b9f592c6a5a0bc8d2a0b59890b97c93cc68db0f6738df05c37089ab' \
+                                'a958d405b82ec604209074a7a8d5b9fc55211b6ef1ed9e7832a58b05abadb04b'
 
         actual = session.load(sid)
 
         assert isinstance(actual, NullSessionInstance)
         assert actual.session_id == sid
+        assert actual.loggable_session_id() == expected_loggable_sid
 
     def test_expired_session_returns_null_session(self, mocker):
         session = create_test_session()
         session_instance = session.create()
+        expected_session_id = session_instance.session_id
+        expected_loggable_id = hashlib.sha512(expected_session_id.encode()).hexdigest()
         mock_current_datetime(mocker, FUTURE_DATETIME)
 
         actual = session.load(session_instance.session_id)
 
         assert isinstance(actual, NullSessionInstance)
-        assert actual.session_id == session_instance.session_id
+        assert actual.session_id == expected_session_id
+        assert actual.loggable_session_id() == expected_loggable_id
 
     def test_save_sets_all_expected_attributes(self, mocker):
         session = create_test_session()

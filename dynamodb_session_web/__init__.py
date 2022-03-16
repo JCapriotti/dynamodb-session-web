@@ -1,8 +1,8 @@
 import hashlib
 import json
-import secrets
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from secrets import token_urlsafe
 from typing import Any, Generic, NamedTuple, Optional, Type, TypeVar
 
 import boto3
@@ -24,7 +24,7 @@ class DynamoData(NamedTuple):
 
 
 def create_session_id(byte_length: int) -> str:
-    return secrets.token_urlsafe(byte_length)
+    return token_urlsafe(byte_length)
 
 
 def current_datetime(datetime_value: datetime = None) -> datetime:
@@ -54,11 +54,14 @@ def expiration_datetime(idle_timeout: int, absolute_timeout: int, created: str, 
 
 class SessionInstanceBase(ABC):
     @abstractmethod
-    def __init__(self, **kwargs):
+    def __init__(self, *,
+                 session_id: str = None,
+                 idle_timeout: int = DEFAULT_IDLE_TIMEOUT,
+                 absolute_timeout: int = DEFAULT_ABSOLUTE_TIMEOUT):
         # TODO Handle non-int and None for timeouts
-        self.session_id = kwargs.get('session_id', None)
-        self.idle_timeout = int(kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT))
-        self.absolute_timeout = int(kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT))
+        self.session_id = session_id
+        self.idle_timeout = int(idle_timeout)
+        self.absolute_timeout = int(absolute_timeout)
 
     @abstractmethod
     def deserialize(self, data):
@@ -116,7 +119,6 @@ class SessionCore(Generic[SessionInstanceType]):
         return session_data_object
 
     def load(self, session_id) -> SessionInstanceType:
-        # TODO Test for NullSession
         data = self._perform_get(session_id)
         if data is not None:
             self._dynamo_set(data, session_id, modified=False)
@@ -224,11 +226,6 @@ class SessionCore(Generic[SessionInstanceType]):
         return self._dynamodb_table
 
 
-class SessionNotFoundError(Exception):
-    loggable_sid: str
+__all__ = [
 
-    def __init__(self, loggable_sid: str = ''):
-        self.loggable_sid = loggable_sid
-
-    def __str__(self):
-        return f'SessionNotFoundError, SID = {self.loggable_sid}'
+]
