@@ -1,4 +1,4 @@
-# dynamodb-web-session
+# dynamodb-session-web
 
 An implementation of a "web" session using DynamoDB as backend storage. This project has the following goals:
 * Focus on core session handling concerns, rather than specific Python frameworks.
