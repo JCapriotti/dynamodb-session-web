@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pytest
-from dynamodb_session_web import NullSessionInstance, SessionCore, SessionDictInstance, SessionInstanceBase, \
+from dynamodb_session_web import NullSessionInstance, SessionManager, SessionDictInstance, SessionInstanceBase, \
     DEFAULT_IDLE_TIMEOUT, DEFAULT_ABSOLUTE_TIMEOUT
 from pytest import param
 from .helpers import create_test_session, get_dynamo_record, LOCAL_ENDPOINT, mock_current_datetime
@@ -49,9 +49,9 @@ class TestIntegration:
             fruit: str = ''
             color: str = ''
 
-            def __init__(self, *, session_id: str = None, idle_timeout: int = DEFAULT_IDLE_TIMEOUT,
-                         absolute_timeout: int = DEFAULT_ABSOLUTE_TIMEOUT):
-                super().__init__(session_id=session_id, idle_timeout=idle_timeout, absolute_timeout=absolute_timeout)
+            def __init__(self, *, session_id: str = None, idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT,
+                         absolute_timeout_seconds: int = DEFAULT_ABSOLUTE_TIMEOUT):
+                super().__init__(session_id=session_id, idle_timeout_seconds=idle_timeout_seconds, absolute_timeout_seconds=absolute_timeout_seconds)
 
             def deserialize(self, data):
                 data_dict = json.loads(data)
@@ -61,7 +61,7 @@ class TestIntegration:
             def serialize(self):
                 return json.dumps(asdict(self))
 
-        session = SessionCore(MySession, endpoint_url=LOCAL_ENDPOINT)
+        session = SessionManager(MySession, endpoint_url=LOCAL_ENDPOINT)
         initial_data = session.create()
         initial_data.fruit = 'apple'
         initial_data.color = 'red'
@@ -82,14 +82,14 @@ class TestIntegration:
         session = create_test_session()
 
         initial_session_data = create_test_data(session.create(
-            idle_timeout=expected_idle_timeout,
-            absolute_timeout=expected_absolute_timeout)
+            idle_timeout_seconds=expected_idle_timeout,
+            absolute_timeout_seconds=expected_absolute_timeout)
         )
         new_session = create_test_session()
         actual_data = new_session.load(initial_session_data.session_id)
 
-        assert actual_data.idle_timeout == expected_idle_timeout
-        assert actual_data.absolute_timeout == expected_absolute_timeout
+        assert actual_data.idle_timeout_seconds == expected_idle_timeout
+        assert actual_data.absolute_timeout_seconds == expected_absolute_timeout
 
     def test_random_session_id_load_returns_null_session(self):
         session = create_test_session()
@@ -101,7 +101,7 @@ class TestIntegration:
 
         assert isinstance(actual, NullSessionInstance)
         assert actual.session_id == sid
-        assert actual.loggable_session_id() == expected_loggable_sid
+        assert actual.loggable_session_id == expected_loggable_sid
 
     def test_expired_session_returns_null_session(self, mocker):
         session = create_test_session()
@@ -114,7 +114,7 @@ class TestIntegration:
 
         assert isinstance(actual, NullSessionInstance)
         assert actual.session_id == expected_session_id
-        assert actual.loggable_session_id() == expected_loggable_id
+        assert actual.loggable_session_id == expected_loggable_id
 
     def test_save_sets_all_expected_attributes(self, mocker):
         session = create_test_session()
@@ -158,7 +158,8 @@ class TestIntegration:
         mock_current_datetime(mocker, initial_dt)
 
         # Create Test
-        session_instance = session.create(idle_timeout=FOUR_HOURS_IN_SECONDS, absolute_timeout=SIX_HOURS_IN_SECONDS)
+        session_instance = session.create(idle_timeout_seconds=FOUR_HOURS_IN_SECONDS,
+                                          absolute_timeout_seconds=SIX_HOURS_IN_SECONDS)
         self.assert_actual_record_values(session_instance.session_id,
                                          exp_created=expected_created,
                                          exp_expired=expected_expires_post_created,
@@ -199,7 +200,8 @@ class TestIntegration:
         mock_current_datetime(mocker, initial_dt)
 
         # Create Test
-        session_instance = session.create(idle_timeout=FOUR_HOURS_IN_SECONDS, absolute_timeout=SIX_HOURS_IN_SECONDS)
+        session_instance = session.create(idle_timeout_seconds=FOUR_HOURS_IN_SECONDS,
+                                          absolute_timeout_seconds=SIX_HOURS_IN_SECONDS)
         self.assert_actual_record_values(session_instance.session_id,
                                          exp_created=expected_created,
                                          exp_expired=expected_expires_post_created,
@@ -229,8 +231,8 @@ class TestIntegration:
         mock_current_datetime(mocker, initial_datetime)
 
         session_instance = session.create(
-            idle_timeout=expected_idle_timeout,
-            absolute_timeout=expected_absolute_timeout
+            idle_timeout_seconds=expected_idle_timeout,
+            absolute_timeout_seconds=expected_absolute_timeout
         )
         actual_record = get_dynamo_record(session_instance.session_id)
 
@@ -252,8 +254,8 @@ class TestIntegration:
         expected_absolute_timeout = 20
         new_session = create_test_session()
         new_session_data = new_session.load(first_session_data.session_id)
-        new_session_data.idle_timeout = expected_idle_timeout
-        new_session_data.absolute_timeout = expected_absolute_timeout
+        new_session_data.idle_timeout_seconds = expected_idle_timeout
+        new_session_data.absolute_timeout_seconds = expected_absolute_timeout
 
         new_session.save(new_session_data)
         actual_record = get_dynamo_record(first_session_data.session_id)

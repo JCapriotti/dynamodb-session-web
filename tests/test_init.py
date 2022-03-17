@@ -1,5 +1,5 @@
 import pytest
-from dynamodb_session_web import SessionCore, SessionDictInstance, SessionInstanceBase
+from dynamodb_session_web import SessionManager, SessionDictInstance, SessionInstanceBase
 
 
 class TestSessionInstance:
@@ -18,8 +18,8 @@ class TestSessionInstance:
         o = self.ChildClass()
 
         assert o.session_id is None
-        assert o.idle_timeout == 7200
-        assert o.absolute_timeout == 43200
+        assert o.idle_timeout_seconds == 7200
+        assert o.absolute_timeout_seconds == 43200
 
     def test_overridden_settings(self):
         expected_session_id = 1
@@ -28,26 +28,26 @@ class TestSessionInstance:
 
         o = self.ChildClass(
             session_id=expected_session_id,
-            idle_timeout=expected_idle_timeout,
-            absolute_timeout=expected_absolute_timeout,
+            idle_timeout_seconds=expected_idle_timeout,
+            absolute_timeout_seconds=expected_absolute_timeout,
         )
 
         assert o.session_id == expected_session_id
-        assert o.idle_timeout == expected_idle_timeout
-        assert o.absolute_timeout == expected_absolute_timeout
+        assert o.idle_timeout_seconds == expected_idle_timeout
+        assert o.absolute_timeout_seconds == expected_absolute_timeout
 
     def test_non_int_idle_timeout_throws(self):
         with pytest.raises(ValueError):
-            self.ChildClass(idle_timeout='a')
+            self.ChildClass(idle_timeout_seconds='a')
 
     def test_non_int_absolute_timeout_throws(self):
         with pytest.raises(ValueError):
-            self.ChildClass(absolute_timeout='a')
+            self.ChildClass(absolute_timeout_seconds='a')
 
 
 class TestSessionCore:
     def test_default_settings(self):
-        o = SessionCore(SessionDictInstance)
+        o = SessionManager(SessionDictInstance)
 
         assert o.sid_byte_length == 32
         assert o.table_name == 'app_session'
@@ -59,7 +59,7 @@ class TestSessionCore:
         expected_sid_min_length = 32 * 1.2
         expected_sid_max_length = 32 * 1.4
 
-        core_object = SessionCore(SessionDictInstance)
+        core_object = SessionManager(SessionDictInstance)
         instance_object = core_object.create()
         instance_object.test_m = 'f'
         actual_sid_length = len(instance_object.session_id)
@@ -73,7 +73,7 @@ class TestSessionCore:
         expected_table_name = 'some name'
         expected_dynamodb_endpoint_url = 'some URL'
 
-        o = SessionCore(
+        o = SessionManager(
             SessionDictInstance,
             sid_byte_length=expected_sid_byte_length,
             table_name=expected_table_name,

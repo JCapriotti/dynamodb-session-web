@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "dynamodb-session-web"
+version = "0.1.0"
+description = "Contains the core API for a DynamoDB-backed session"
+authors = ["Jason Capriotti <jason.capriotti@gmail.com>"]
+license = "GPL"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+boto3 = "^1.21.21"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.0.0"
+pytest-docker = "^0.10.3"
+pytest-mock = "^3.7.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

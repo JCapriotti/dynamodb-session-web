@@ -2,17 +2,17 @@ from datetime import datetime
 from unittest.mock import Mock
 
 import boto3
-from dynamodb_session_web import SessionCore, SessionDictInstance
+from dynamodb_session_web import SessionManager, SessionDictInstance
 
 TABLE_NAME = 'app_session'
 LOCAL_ENDPOINT = 'http://localhost:8000'
 
 
-def create_test_session(**kwargs) -> SessionCore[SessionDictInstance]:
+def create_test_session(**kwargs) -> SessionManager[SessionDictInstance]:
     """
     Creates a SessionCore object configured for integration testing
     """
-    return SessionCore(SessionDictInstance, endpoint_url=LOCAL_ENDPOINT, **kwargs)
+    return SessionManager(SessionDictInstance, endpoint_url=LOCAL_ENDPOINT, **kwargs)
 
 
 def get_dynamo_resource():

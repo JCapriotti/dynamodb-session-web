@@ -53,24 +53,24 @@ def expiration_datetime(idle_timeout: int, absolute_timeout: int, created: str, 
 
 
 class SessionInstanceBase(ABC):
-    @abstractmethod
     def __init__(self, *,
                  session_id: str = None,
-                 idle_timeout: int = DEFAULT_IDLE_TIMEOUT,
-                 absolute_timeout: int = DEFAULT_ABSOLUTE_TIMEOUT):
+                 idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT,
+                 absolute_timeout_seconds: int = DEFAULT_ABSOLUTE_TIMEOUT):
         # TODO Handle non-int and None for timeouts
         self.session_id = session_id
-        self.idle_timeout = int(idle_timeout)
-        self.absolute_timeout = int(absolute_timeout)
+        self.idle_timeout_seconds = int(idle_timeout_seconds)
+        self.absolute_timeout_seconds = int(absolute_timeout_seconds)
 
     @abstractmethod
-    def deserialize(self, data):
+    def deserialize(self, data: str):
         pass
 
     @abstractmethod
-    def serialize(self):
+    def serialize(self) -> str:
         pass
 
+    @property
     def loggable_session_id(self):
         return hashlib.sha512(self.session_id.encode()).hexdigest()
 
@@ -79,10 +79,10 @@ class SessionDictInstance(SessionInstanceBase, dict):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def deserialize(self, data):
+    def deserialize(self, data: str):
         self.update(json.loads(data))
 
-    def serialize(self):
+    def serialize(self) -> str:
         return json.dumps(self)
 
 
@@ -97,11 +97,11 @@ class NullSessionInstance(SessionInstanceBase):
         pass
 
 
-class SessionCore(Generic[SessionInstanceType]):
+class SessionManager(Generic[SessionInstanceType]):
     _boto_client = None
     _dynamodb_table = None
 
-    def __init__(self, data_type: Type[SessionInstanceType], **kwargs):
+    def __init__(self, data_type: Type[SessionInstanceType] = SessionDictInstance, **kwargs):
         self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
         self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
         self.endpoint_url = kwargs.get('endpoint_url', None)
@@ -112,8 +112,8 @@ class SessionCore(Generic[SessionInstanceType]):
         kwargs['session_id'] = sid
         session_data_object = self._data_type(**kwargs)
         dynamo_data = DynamoData(session_data_object.serialize(),
-                                 session_data_object.idle_timeout,
-                                 session_data_object.absolute_timeout,
+                                 session_data_object.idle_timeout_seconds,
+                                 session_data_object.absolute_timeout_seconds,
                                  current_datetime().isoformat())
         self._dynamo_set(dynamo_data, sid, modified=True)
         return session_data_object
@@ -123,8 +123,8 @@ class SessionCore(Generic[SessionInstanceType]):
         if data is not None:
             self._dynamo_set(data, session_id, modified=False)
             session_object = self._data_type(session_id=session_id,
-                                             idle_timeout=data.idle_timeout,
-                                             absolute_timeout=data.absolute_timeout)
+                                             idle_timeout_seconds=data.idle_timeout,
+                                             absolute_timeout_seconds=data.absolute_timeout)
             session_object.deserialize(data.data)
             return session_object
 
@@ -132,7 +132,7 @@ class SessionCore(Generic[SessionInstanceType]):
 
     def save(self, data: SessionInstanceType):
         created = self._dynamo_get_created(data.session_id)
-        dynamo_data = DynamoData(data.serialize(), data.idle_timeout, data.absolute_timeout, created)
+        dynamo_data = DynamoData(data.serialize(), data.idle_timeout_seconds, data.absolute_timeout_seconds, created)
         self._dynamo_set(dynamo_data, data.session_id, modified=True)
 
     def clear(self, session_id):
@@ -227,5 +227,8 @@ class SessionCore(Generic[SessionInstanceType]):
 
 
 __all__ = [
-
+    'SessionManager',
+    'SessionDictInstance',
+    'SessionInstanceBase',
+    'NullSessionInstance',
 ]

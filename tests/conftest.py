@@ -1,7 +1,7 @@
 import botocore
 import pytest
 from pytest_mock import MockerFixture
-from dynamodb_session_web import SessionCore
+from dynamodb_session_web import SessionManager
 from .helpers import get_dynamo_resource, TABLE_NAME
 
 
@@ -41,9 +41,9 @@ def dynamodb_table(docker_services):
 
 @pytest.fixture
 def mock_dynamo_set(mocker: MockerFixture):
-    return mocker.patch.object(SessionCore, '_dynamo_set')
+    return mocker.patch.object(SessionManager, '_dynamo_set')
 
 
 @pytest.fixture
 def mock_dynamo_get(mocker: MockerFixture):
-    return mocker.patch.object(SessionCore, '_dynamo_get')
+    return mocker.patch.object(SessionManager, '_dynamo_get')
