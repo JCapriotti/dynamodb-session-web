@@ -1,9 +1,17 @@
 [tool.poetry]
 name = "dynamodb-session-web"
-version = "0.1.0"
+version = "0.1.1"
 description = "Contains the core API for a DynamoDB-backed session"
+keywords = ["DynamoDB", "Session", "Web"]
 authors = ["Jason Capriotti <jason.capriotti@gmail.com>"]
-license = "GPL"
+license = "GPL-3.0-only"
+include = [
+    "LICENSE",
+]
+readme = "README.md"
+homepage = "https://github.com/JCapriotti/dynamodb-session-web"
+repository = "https://github.com/JCapriotti/dynamodb-session-web"
+
 
 [tool.poetry.dependencies]
 python = "^3.9"
