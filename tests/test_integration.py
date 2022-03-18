@@ -5,10 +5,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pytest
-from dynamodb_session_web import NullSessionInstance, SessionManager, SessionDictInstance, SessionInstanceBase, \
-    DEFAULT_IDLE_TIMEOUT, DEFAULT_ABSOLUTE_TIMEOUT
 from pytest import param
+
+from dynamodb_session_web import NullSessionInstance, SessionManager, SessionDictInstance, SessionInstanceBase
 from .helpers import create_test_session, get_dynamo_record, LOCAL_ENDPOINT, mock_current_datetime
+
+DEFAULT_IDLE_TIMEOUT = 7200  # two hours
+DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
 
 FUTURE_DATETIME = datetime.utcnow() + timedelta(days=300)
 EXPECTED_KEY = 'foo'
@@ -19,6 +22,9 @@ NINE_AM = int(datetime(2021, 3, 1, 9, 0, 0, tzinfo=timezone.utc).timestamp())
 TEN_AM = int(datetime(2021, 3, 1, 10, 0, 0, tzinfo=timezone.utc).timestamp())
 ELEVEN_AM = int(datetime(2021, 3, 1, 11, 0, 0, tzinfo=timezone.utc).timestamp())
 FRIENDLY_DT_FORMAT = '%b %d %Y, %I %p'
+
+# pylint: disable=no-self-use
+# pylint: disable=too-many-arguments
 
 
 def create_test_data(test_data: Optional[SessionInstanceBase] = None):
@@ -31,7 +37,7 @@ def create_test_data(test_data: Optional[SessionInstanceBase] = None):
 class TestIntegration:
 
     @pytest.fixture(autouse=True)
-    def _dynamodb_local(self, dynamodb_table):
+    def _dynamodb_local(self, dynamodb_table):  # pylint: disable=unused-argument
         return
 
     def test_dictionary_save_load(self):
@@ -49,9 +55,8 @@ class TestIntegration:
             fruit: str = ''
             color: str = ''
 
-            def __init__(self, *, session_id: str = None, idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT,
-                         absolute_timeout_seconds: int = DEFAULT_ABSOLUTE_TIMEOUT):
-                super().__init__(session_id=session_id, idle_timeout_seconds=idle_timeout_seconds, absolute_timeout_seconds=absolute_timeout_seconds)
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
 
             def deserialize(self, data):
                 data_dict = json.loads(data)
@@ -138,7 +143,8 @@ class TestIntegration:
         ]
     )
     def test_created_accessed_expires_value_for_create_load(
-            self, mocker, created, accessed, expected_expires_post_created, expected_expires_post_accessed):
+            self, mocker, created, accessed, expected_expires_post_created,
+            expected_expires_post_accessed):
         """
         Tests that accessing a session an hour after creation updates the `accessed` field, but `created` is not
         affected. `expires` *may* be updated, depending on how close the update is to the timeouts.
@@ -180,7 +186,8 @@ class TestIntegration:
         ]
     )
     def test_created_accessed_expires_value_for_create_save(
-            self, mocker, created, accessed, expected_expires_post_created, expected_expires_post_accessed):
+            self, mocker, created, accessed, expected_expires_post_created,
+            expected_expires_post_accessed):
         """
         Tests that accessing a session an hour after creation updates the `accessed` field, but `created` is not
         affected. `expires` *may* be updated, depending on how close the update is to the timeouts.

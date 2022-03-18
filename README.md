@@ -7,6 +7,7 @@ best practices by default. Specifically, best practices for:
   * Session ID
     - [X] Length, value, and entropy: ID is a 32-byte secure random number. 
     - [X] Strict session management: ID generation can only occur within the framework.
+    - [X] Treat as sensitive: A "loggable session ID" is provided as a property in order to make logging the ID easier (if desired).
   * Timeouts
     - [X] Absolute session timeout - default of 12 hours
     - [X] Idle session timeout - default of 2 hours

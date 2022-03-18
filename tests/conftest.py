@@ -6,10 +6,11 @@ from .helpers import get_dynamo_resource, TABLE_NAME
 
 
 @pytest.fixture(scope='function')
-def dynamodb_table(docker_services):
+def dynamodb_table(docker_services):  # pylint: disable=unused-argument
     dynamodb = get_dynamo_resource()
 
     # Remove table (if it exists)
+    # noinspection PyUnresolvedReferences
     try:
         table = dynamodb.Table(TABLE_NAME)
         table.delete()

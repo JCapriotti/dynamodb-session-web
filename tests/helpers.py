@@ -28,4 +28,4 @@ def get_dynamo_record(key):
 
 
 def mock_current_datetime(mocker, val: datetime):
-    mocker.patch('dynamodb_session_web.current_datetime', Mock(return_value=val))
+    mocker.patch('dynamodb_session_web._session.current_datetime', Mock(return_value=val))

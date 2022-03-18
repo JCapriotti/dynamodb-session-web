@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dynamodb-session-web"
-version = "0.1.1"
+version = "0.1.2"
 description = "Contains the core API for a DynamoDB-backed session"
 keywords = ["DynamoDB", "Session", "Web"]
 authors = ["Jason Capriotti <jason.capriotti@gmail.com>"]
@@ -25,3 +25,18 @@ pytest-mock = "^3.7.0"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[[tool.mypy.overrides]]
+module = [
+    "boto3",
+    "botocore.exceptions"
+]
+ignore_missing_imports = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = "missing-function-docstring, missing-class-docstring, missing-module-docstring"
+max-line-length = 120
