@@ -103,6 +103,8 @@ class SessionManager(Generic[T]):
     _idle_timeout = DEFAULT_IDLE_TIMEOUT
     _absolute_timeout = DEFAULT_ABSOLUTE_TIMEOUT
 
+    null_session_class = NullSessionInstance
+
     @overload
     def __init__(self: 'SessionManager[SessionDictInstance]', **kwargs) -> None:  # pragma: no cover
         self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
@@ -193,7 +195,7 @@ class SessionManager(Generic[T]):
             session_object.deserialize(data.data)
             return session_object
 
-        return NullSessionInstance(session_id=session_id)  # type: ignore
+        return self.null_session_class(session_id=session_id)  # type: ignore
 
     def save(self, data: T):
         dynamo_data = DynamoData(data.serialize(),
