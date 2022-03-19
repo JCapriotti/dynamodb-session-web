@@ -2,7 +2,7 @@ import botocore
 import pytest
 from pytest_mock import MockerFixture
 from dynamodb_session_web import SessionManager
-from .helpers import get_dynamo_resource, TABLE_NAME
+from .utility import get_dynamo_resource, TABLE_NAME
 
 
 @pytest.fixture(scope='function')

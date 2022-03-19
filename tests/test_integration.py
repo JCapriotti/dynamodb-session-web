@@ -2,20 +2,17 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import pytest
 from pytest import param
 
-from dynamodb_session_web import NullSessionInstance, SessionManager, SessionDictInstance, SessionInstanceBase
-from .helpers import create_test_session, get_dynamo_record, LOCAL_ENDPOINT, mock_current_datetime
+from dynamodb_session_web import NullSessionInstance, SessionManager, SessionInstanceBase
+from .utility import create_session_manager, get_dynamo_record, LOCAL_ENDPOINT, mock_current_datetime, str_param
 
 DEFAULT_IDLE_TIMEOUT = 7200  # two hours
 DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
 
 FUTURE_DATETIME = datetime.utcnow() + timedelta(days=300)
-EXPECTED_KEY = 'foo'
-EXPECTED_VALUE = 'bar'
 FOUR_HOURS_IN_SECONDS = 14400
 SIX_HOURS_IN_SECONDS = 21600
 NINE_AM = int(datetime(2021, 3, 1, 9, 0, 0, tzinfo=timezone.utc).timestamp())
@@ -27,26 +24,29 @@ FRIENDLY_DT_FORMAT = '%b %d %Y, %I %p'
 # pylint: disable=too-many-arguments
 
 
-def create_test_data(test_data: Optional[SessionInstanceBase] = None):
-    if test_data is None:
-        test_data = SessionDictInstance()
-    test_data[EXPECTED_KEY] = EXPECTED_VALUE
-    return test_data
-
-
 class TestIntegration:
 
     @pytest.fixture(autouse=True)
     def _dynamodb_local(self, dynamodb_table):  # pylint: disable=unused-argument
         return
 
-    def test_dictionary_save_load(self):
-        session = create_test_session()
-        test_data = create_test_data(session.create())
+    def test_create_doesnt_save(self):
+        session = create_session_manager()
+        session_instance = session.create()
 
-        session.save(test_data)
-        actual_data = session.load(test_data.session_id)
-        assert actual_data[EXPECTED_KEY] == EXPECTED_VALUE
+        assert get_dynamo_record(session_instance.session_id) is None
+
+    def test_dictionary_save_load(self):
+        expected_key = str_param()
+        expected_value = str_param()
+
+        session = create_session_manager()
+        session_instance = session.create()
+        session_instance[expected_key] = expected_value
+        session.save(session_instance)
+
+        actual_data = session.load(session_instance.session_id)
+        assert actual_data[expected_key] == expected_value
 
     def test_example_custom_class(self):
         """ Test/Example code showing save/load with a custom session data class """
@@ -78,26 +78,42 @@ class TestIntegration:
         assert loaded_data.fruit == initial_data.fruit
         assert loaded_data.color == initial_data.color
 
-    def test_load_loads_timeouts(self):
+    def test_load_loads_instance_timeouts(self):
         """
         Test that a new SessionCore instance will load timeouts from a previously saved session.
         """
         expected_idle_timeout = 10
         expected_absolute_timeout = 20
-        session = create_test_session()
+        session = create_session_manager()
 
-        initial_session_data = create_test_data(session.create(
+        initial_session_data = session.create_and_save(
             idle_timeout_seconds=expected_idle_timeout,
             absolute_timeout_seconds=expected_absolute_timeout)
-        )
-        new_session = create_test_session()
+
+        new_session = create_session_manager()
         actual_data = new_session.load(initial_session_data.session_id)
 
         assert actual_data.idle_timeout_seconds == expected_idle_timeout
         assert actual_data.absolute_timeout_seconds == expected_absolute_timeout
 
+    def test_load_loads_manager_overridden_timeouts(self):
+        """
+        Test that a new SessionCore instance will load timeouts from a previously saved session.
+        """
+        expected_idle_timeout = 10
+        expected_absolute_timeout = 20
+        session = create_session_manager(idle_timeout_seconds=expected_idle_timeout,
+                                         absolute_timeout_seconds=expected_absolute_timeout)
+
+        initial_session_data = session.create_and_save()
+
+        actual_data = session.load(initial_session_data.session_id)
+
+        assert actual_data.idle_timeout_seconds == expected_idle_timeout
+        assert actual_data.absolute_timeout_seconds == expected_absolute_timeout
+
     def test_random_session_id_load_returns_null_session(self):
-        session = create_test_session()
+        session = create_session_manager()
         sid = 'some_unknown_session_id'
         expected_loggable_sid = '4ee055b82b9f592c6a5a0bc8d2a0b59890b97c93cc68db0f6738df05c37089ab' \
                                 'a958d405b82ec604209074a7a8d5b9fc55211b6ef1ed9e7832a58b05abadb04b'
@@ -109,8 +125,8 @@ class TestIntegration:
         assert actual.loggable_session_id == expected_loggable_sid
 
     def test_expired_session_returns_null_session(self, mocker):
-        session = create_test_session()
-        session_instance = session.create()
+        session = create_session_manager()
+        session_instance = session.create_and_save()
         expected_session_id = session_instance.session_id
         expected_loggable_id = hashlib.sha512(expected_session_id.encode()).hexdigest()
         mock_current_datetime(mocker, FUTURE_DATETIME)
@@ -122,12 +138,11 @@ class TestIntegration:
         assert actual.loggable_session_id == expected_loggable_id
 
     def test_save_sets_all_expected_attributes(self, mocker):
-        session = create_test_session()
+        session = create_session_manager()
         initial_datetime = datetime(1977, 12, 28, 12, 40, 0, 0, tzinfo=timezone.utc)
         mock_current_datetime(mocker, initial_datetime)
 
-        session_instance = session.create()
-        session.save(session_instance)
+        session_instance = session.create_and_save()
         actual_record = get_dynamo_record(session_instance.session_id)
 
         assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
@@ -160,12 +175,12 @@ class TestIntegration:
         accessed_dt = datetime.strptime(accessed, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
         expected_created = initial_dt.isoformat()
 
-        session = create_test_session()
+        session = create_session_manager()
         mock_current_datetime(mocker, initial_dt)
 
         # Create Test
-        session_instance = session.create(idle_timeout_seconds=FOUR_HOURS_IN_SECONDS,
-                                          absolute_timeout_seconds=SIX_HOURS_IN_SECONDS)
+        session_instance = session.create_and_save(idle_timeout_seconds=FOUR_HOURS_IN_SECONDS,
+                                                   absolute_timeout_seconds=SIX_HOURS_IN_SECONDS)
         self.assert_actual_record_values(session_instance.session_id,
                                          exp_created=expected_created,
                                          exp_expired=expected_expires_post_created,
@@ -203,12 +218,12 @@ class TestIntegration:
         accessed_dt = datetime.strptime(accessed, FRIENDLY_DT_FORMAT).replace(tzinfo=timezone.utc)
         expected_created = initial_dt.isoformat()
 
-        session = create_test_session()
+        session = create_session_manager()
         mock_current_datetime(mocker, initial_dt)
 
         # Create Test
-        session_instance = session.create(idle_timeout_seconds=FOUR_HOURS_IN_SECONDS,
-                                          absolute_timeout_seconds=SIX_HOURS_IN_SECONDS)
+        session_instance = session.create_and_save(idle_timeout_seconds=FOUR_HOURS_IN_SECONDS,
+                                                   absolute_timeout_seconds=SIX_HOURS_IN_SECONDS)
         self.assert_actual_record_values(session_instance.session_id,
                                          exp_created=expected_created,
                                          exp_expired=expected_expires_post_created,
@@ -233,14 +248,12 @@ class TestIntegration:
     def test_new_session_object_uses_saved_timeouts_not_defaults(self, mocker):
         expected_idle_timeout = 10
         expected_absolute_timeout = 20
-        session = create_test_session()
+        session = create_session_manager()
         initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0, tzinfo=timezone.utc)
         mock_current_datetime(mocker, initial_datetime)
 
-        session_instance = session.create(
-            idle_timeout_seconds=expected_idle_timeout,
-            absolute_timeout_seconds=expected_absolute_timeout
-        )
+        session_instance = session.create_and_save(idle_timeout_seconds=expected_idle_timeout,
+                                                   absolute_timeout_seconds=expected_absolute_timeout)
         actual_record = get_dynamo_record(session_instance.session_id)
 
         assert actual_record['expires'] == int(initial_datetime.timestamp()) + expected_idle_timeout
@@ -248,18 +261,18 @@ class TestIntegration:
         assert actual_record['absolute_timeout'] == expected_absolute_timeout
 
     def test_changed_timeouts_are_allowed(self, mocker):
-        session = create_test_session()
+        session = create_session_manager()
         initial_datetime = datetime(2020, 3, 11, 0, 0, 0, 0, tzinfo=timezone.utc)
         mock_current_datetime(mocker, initial_datetime)
 
-        first_session_data = session.create()
+        first_session_data = session.create_and_save()
         actual_record = get_dynamo_record(first_session_data.session_id)
 
         assert actual_record['expires'] == int(initial_datetime.timestamp()) + DEFAULT_IDLE_TIMEOUT
 
         expected_idle_timeout = 10
         expected_absolute_timeout = 20
-        new_session = create_test_session()
+        new_session = create_session_manager()
         new_session_data = new_session.load(first_session_data.session_id)
         new_session_data.idle_timeout_seconds = expected_idle_timeout
         new_session_data.absolute_timeout_seconds = expected_absolute_timeout
@@ -272,8 +285,8 @@ class TestIntegration:
         assert actual_record['absolute_timeout'] == expected_absolute_timeout
 
     def test_clear_removes_record(self):
-        session = create_test_session()
-        session_instance = session.create()
+        session = create_session_manager()
+        session_instance = session.create_and_save()
 
         # Check that it was saved first
         actual_record = get_dynamo_record(session_instance.session_id)
@@ -287,8 +300,8 @@ class TestIntegration:
     def test_actual_current_timestamps_are_within_two_seconds_of_now(self):
         expected_datetime = datetime.now(tz=timezone.utc)
         expected_ttl = int(datetime.now(tz=timezone.utc).timestamp()) + DEFAULT_ABSOLUTE_TIMEOUT
-        session = create_test_session()
-        session_instance = session.create()
+        session = create_session_manager()
+        session_instance = session.create_and_save()
 
         actual_record = get_dynamo_record(session_instance.session_id)
 

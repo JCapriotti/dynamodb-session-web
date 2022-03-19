@@ -44,7 +44,6 @@ class TestSessionCore:
         assert actual.table_name == 'app_session'
         assert actual.endpoint_url is None
 
-    @pytest.mark.usefixtures('mock_dynamo_set')
     def test_create(self):
         # Base64 of each byte is approximately 1.3 characters
         expected_sid_min_length = 32 * 1.2
@@ -58,20 +57,25 @@ class TestSessionCore:
         assert isinstance(instance_object, SessionDictInstance)
         assert expected_sid_min_length < actual_sid_length < expected_sid_max_length
 
-    @pytest.mark.usefixtures('mock_dynamo_set')
     def test_overridden_settings(self):
         expected_sid_byte_length = 1
         expected_table_name = 'some name'
         expected_dynamodb_endpoint_url = 'some URL'
+        expected_idle_timeout = 4
+        expected_absolute_timeout = 5
 
         actual = SessionManager(
             SessionDictInstance,
             sid_byte_length=expected_sid_byte_length,
             table_name=expected_table_name,
             endpoint_url=expected_dynamodb_endpoint_url,
+            idle_timeout_seconds=expected_idle_timeout,
+            absolute_timeout_seconds=expected_absolute_timeout
         )
 
         assert actual.sid_byte_length == expected_sid_byte_length
         assert actual.table_name == expected_table_name
         assert actual.endpoint_url == expected_dynamodb_endpoint_url
+        assert actual._idle_timeout == expected_idle_timeout  # pylint: disable=protected-access
+        assert actual._absolute_timeout == expected_absolute_timeout  # pylint: disable=protected-access
         assert isinstance(actual.create(), SessionDictInstance)

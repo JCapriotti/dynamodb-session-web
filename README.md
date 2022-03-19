@@ -125,10 +125,12 @@ session.clear(session_id)
 ## Configuration
 
 Several behaviors can be configured at the Session Manager level:
-* Custom data class; must provide serialization and deserialization methods (see examples)
-* Session ID length
-* Table name
-* DynamoDB URL
+* Custom data class; must provide serialization and deserialization methods (see examples). Defaults to a dictionary.
+* Session ID length. Defaults to 32 bytes.
+* Table name. Defaults to `app_session`
+* DynamoDB URL. Defaults to None (i.e. Boto3 logic).
+* Idle session timeout (in seconds). Defaults to 7200 seconds (2 hours).
+* Absolute session timeout (in seconds). Defaults to 43200 seconds (12 hours).
 
 ```python
 from dynamodb_session_web import SessionInstanceBase, SessionManager
@@ -145,10 +147,12 @@ SessionManager(
     sid_byte_length=128,
     table_name='my-dynamodb-table',
     endpoint_url='http://localhost:8000',
+    idle_timeout_seconds=300,
+    absolute_timeout_seconds=3600,
 )
 ```
 
-Additionally, session instances can have their own idle and absolute timeouts, specified in seconds:
+Additionally, individual session instances can have their own idle and absolute timeouts, specified in seconds:
 
 ```python
 from dynamodb_session_web import SessionManager

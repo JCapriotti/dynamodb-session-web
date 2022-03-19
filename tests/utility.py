@@ -1,4 +1,5 @@
 from datetime import datetime
+from random import randrange
 from unittest.mock import Mock
 
 import boto3
@@ -8,7 +9,7 @@ TABLE_NAME = 'app_session'
 LOCAL_ENDPOINT = 'http://localhost:8000'
 
 
-def create_test_session(**kwargs) -> SessionManager[SessionDictInstance]:
+def create_session_manager(**kwargs) -> SessionManager[SessionDictInstance]:
     """
     Creates a SessionCore object configured for integration testing
     """
@@ -29,3 +30,7 @@ def get_dynamo_record(key):
 
 def mock_current_datetime(mocker, val: datetime):
     mocker.patch('dynamodb_session_web._session.current_datetime', Mock(return_value=val))
+
+
+def str_param() -> str:
+    return str(randrange(100000))
