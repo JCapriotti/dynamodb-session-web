@@ -53,7 +53,7 @@ def expiration_datetime(idle_timeout: int, absolute_timeout: int, created: str, 
 
 class SessionInstanceBase(ABC):
     def __init__(self, *,
-                 session_id: str = None,
+                 session_id: str = '',
                  idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT,
                  absolute_timeout_seconds: int = DEFAULT_ABSOLUTE_TIMEOUT,
                  created: datetime = None):
@@ -103,7 +103,7 @@ class SessionManager(Generic[T]):
     _idle_timeout = DEFAULT_IDLE_TIMEOUT
     _absolute_timeout = DEFAULT_ABSOLUTE_TIMEOUT
 
-    null_session_class = NullSessionInstance
+    null_session_class: Type[SessionInstanceBase] = NullSessionInstance
 
     @overload
     def __init__(self: 'SessionManager[SessionDictInstance]', **kwargs) -> None:  # pragma: no cover

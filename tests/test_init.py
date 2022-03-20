@@ -8,7 +8,7 @@ class TestSessionInstance:
     def test_default_settings(self):
         actual = SessionDictInstance()
 
-        assert actual.session_id is None
+        assert actual.session_id == ''
         assert actual.idle_timeout_seconds == 7200
         assert actual.absolute_timeout_seconds == 43200
 
