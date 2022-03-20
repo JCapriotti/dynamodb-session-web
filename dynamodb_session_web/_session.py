@@ -60,7 +60,7 @@ class SessionInstanceBase(ABC):
         self.session_id = session_id
         self.idle_timeout_seconds = int(idle_timeout_seconds)
         self.absolute_timeout_seconds = int(absolute_timeout_seconds)
-        self.created = current_datetime().isoformat() if created is None else created.isoformat()
+        self.created = current_datetime() if created is None else created
 
     @abstractmethod
     def deserialize(self, data: str):
@@ -187,11 +187,10 @@ class SessionManager(Generic[T]):
         data = self._perform_get(session_id)
         if data is not None:
             self._dynamo_set(data, session_id, modified=False)
-            created = datetime.fromisoformat(data.created)
             session_object = self._data_type(session_id=session_id,
                                              idle_timeout_seconds=data.idle_timeout,
                                              absolute_timeout_seconds=data.absolute_timeout,
-                                             created=created)
+                                             created=datetime.fromisoformat(data.created))
             session_object.deserialize(data.data)
             return session_object
 
@@ -201,7 +200,7 @@ class SessionManager(Generic[T]):
         dynamo_data = DynamoData(data.serialize(),
                                  data.idle_timeout_seconds,
                                  data.absolute_timeout_seconds,
-                                 str(data.created))
+                                 data.created.isoformat())
         self._dynamo_set(dynamo_data, data.session_id, modified=True)
 
     def clear(self, session_id):
@@ -231,7 +230,7 @@ class SessionManager(Generic[T]):
         if res.get('Items') and len(res.get('Items')) == 1:
             idle_timeout = int(res.get('Items')[0]['idle_timeout'].get('N', self._idle_timeout))
             absolute_timeout = int(res.get('Items')[0]['absolute_timeout'].get('N', self._absolute_timeout))
-            created = res.get('Items')[0]['created'].get('S', current_datetime())
+            created: str = res.get('Items')[0]['created'].get('S', current_datetime().isoformat())
 
             if res.get('Items')[0]['data']:
                 data = res.get('Items')[0]['data']
