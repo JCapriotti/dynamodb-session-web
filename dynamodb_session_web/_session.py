@@ -114,7 +114,7 @@ class NullSessionInstance(SessionInstanceBase):
         pass
 
 
-class SessionManager(Generic[T]):
+class SessionManager(Generic[T]):  # pylint: disable=too-many-instance-attributes
     _boto_client = None
     _data_type: Type[T]
     _idle_timeout: int = DEFAULT_IDLE_TIMEOUT
@@ -211,9 +211,9 @@ class SessionManager(Generic[T]):
         data = None
         try:
             validate_session_id(session_id, self._sid_keys)
-        except BadSignature:
+        except BadSignature as exc:
             if self._bad_session_id_raises:
-                raise InvalidSessionIdError(loggable_session_id(session_id))
+                raise InvalidSessionIdError(loggable_session_id(session_id)) from exc
         else:
             data = self._perform_get(session_id)
             if data is None and self._bad_session_id_raises:
