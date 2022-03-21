@@ -4,10 +4,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from itsdangerous.exc import BadSignature
 from pytest import param
 
 from dynamodb_session_web import NullSessionInstance, SessionManager, SessionInstanceBase
+from dynamodb_session_web.exceptions import InvalidSessionIdError, SessionNotFoundError
 from .utility import create_session_manager, get_dynamo_record, LOCAL_ENDPOINT, mock_current_datetime, str_param
 
 DEFAULT_IDLE_TIMEOUT = 7200  # two hours
@@ -61,17 +61,21 @@ class TestIntegration:
         actual_data = session.load(session_instance.session_id)
         assert actual_data[expected_key] == expected_value
 
-    def test_hmac_sid_invalid(self):
-        expected_key = str_param()
-        expected_value = str_param()
-
+    def test_hmac_sid_invalid_returns_null(self):
         session = create_session_manager(sid_keys=['foo'])
-        session_instance = session.create()
-        session_instance[expected_key] = expected_value
-        session.save(session_instance)
+        actual = session.load('my string.wh6tMHxLgJqB6oY1uT73iMlyrOA')
 
-        with pytest.raises(BadSignature):
-            session.load('my string.wh6tMHxLgJqB6oY1uT73iMlyrOA')
+        assert isinstance(actual, NullSessionInstance)
+
+    def test_hmac_sid_invalid_raises(self):
+        bad_sid = 'my string.wh6tMHxLgJqB6oY1uT73iMlyrOA'
+        expected_loggable_sid = '89e1eef25672719323a4e0918c1474d74af3041cd2bb719c377038e467ef9fa1' \
+                                '756c5bbb3ad024c9b2c0b1b1aff0a9948e77f4c00d1114310c3b48a14080d736'
+
+        session = create_session_manager(sid_keys=['foo'], bad_session_id_raises=True)
+
+        with pytest.raises(InvalidSessionIdError, match=expected_loggable_sid):
+            session.load(bad_sid)
 
     def test_example_custom_class(self):
         """ Test/Example code showing save/load with a custom session data class """
@@ -149,18 +153,37 @@ class TestIntegration:
         assert actual.session_id == sid
         assert actual.loggable_session_id == expected_loggable_sid
 
+    def test_random_session_id_load_raises(self):
+        session = create_session_manager(bad_session_id_raises=True)
+        sid = 'some_unknown_session_id'
+        expected_loggable_sid = '4ee055b82b9f592c6a5a0bc8d2a0b59890b97c93cc68db0f6738df05c37089ab' \
+                                'a958d405b82ec604209074a7a8d5b9fc55211b6ef1ed9e7832a58b05abadb04b'
+
+        with pytest.raises(SessionNotFoundError, match=expected_loggable_sid):
+            session.load(sid)
+
     def test_expired_session_returns_null_session(self, mocker):
         session = create_session_manager()
         session_instance = session.create_and_save()
         expected_session_id = session_instance.session_id
-        expected_loggable_id = hashlib.sha512(expected_session_id.encode()).hexdigest()
+        expected_loggable_sid = hashlib.sha512(expected_session_id.encode()).hexdigest()
         mock_current_datetime(mocker, FUTURE_DATETIME)
 
         actual = session.load(session_instance.session_id)
 
         assert isinstance(actual, NullSessionInstance)
         assert actual.session_id == expected_session_id
-        assert actual.loggable_session_id == expected_loggable_id
+        assert actual.loggable_session_id == expected_loggable_sid
+
+    def test_expired_session_raises(self, mocker):
+        session = create_session_manager(bad_session_id_raises=True)
+        session_instance = session.create_and_save()
+        expected_session_id = session_instance.session_id
+        expected_loggable_sid = hashlib.sha512(expected_session_id.encode()).hexdigest()
+        mock_current_datetime(mocker, FUTURE_DATETIME)
+
+        with pytest.raises(SessionNotFoundError, match=expected_loggable_sid):
+            session.load(session_instance.session_id)
 
     def test_save_sets_all_expected_attributes(self, mocker):
         session = create_session_manager()

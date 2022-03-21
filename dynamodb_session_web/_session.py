@@ -6,7 +6,9 @@ from secrets import token_urlsafe
 from typing import Any, Generic, List, NamedTuple, Optional, Type, TypeVar, overload
 
 import boto3
-from itsdangerous import Signer
+from itsdangerous import BadSignature, Signer
+
+from .exceptions import InvalidSessionIdError, SessionNotFoundError
 
 
 DEFAULT_IDLE_TIMEOUT = 7200  # two hours
@@ -62,6 +64,10 @@ def expiration_datetime(idle_timeout: int, absolute_timeout: int, created: str, 
     return min(absolute_expiration, idle_expiration)
 
 
+def loggable_session_id(sid: str) -> str:
+    return hashlib.sha512(sid.encode()).hexdigest()
+
+
 class SessionInstanceBase(ABC):
     def __init__(self, *,
                  session_id: str = '',
@@ -83,7 +89,7 @@ class SessionInstanceBase(ABC):
 
     @property
     def loggable_session_id(self):
-        return hashlib.sha512(self.session_id.encode()).hexdigest()
+        return loggable_session_id(self.session_id)
 
 
 class SessionDictInstance(SessionInstanceBase, dict):
@@ -125,6 +131,7 @@ class SessionManager(Generic[T]):
         self._idle_timeout = kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT)
         self._sid_keys = kwargs.get('sid_keys', [])
+        self._bad_session_id_raises = kwargs.get('bad_session_id_raises', False)
         self._data_type = SessionDictInstance
 
     @overload
@@ -135,6 +142,7 @@ class SessionManager(Generic[T]):
         self._idle_timeout = kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT)
         self._sid_keys = kwargs.get('sid_keys', [])
+        self._bad_session_id_raises = kwargs.get('bad_session_id_raises', False)
         self._data_type = data_type
 
     def __init__(self, data_type: Type[T] = SessionDictInstance, **kwargs) -> None:  # type: ignore
@@ -154,6 +162,7 @@ class SessionManager(Generic[T]):
         self._idle_timeout = kwargs.get('idle_timeout_seconds', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout_seconds', DEFAULT_ABSOLUTE_TIMEOUT)
         self._sid_keys = kwargs.get('sid_keys', [])
+        self._bad_session_id_raises = kwargs.get('bad_session_id_raises', False)
         self._data_type = data_type
 
     def create(self, *, idle_timeout_seconds: int = None, absolute_timeout_seconds: int = None) -> T:
@@ -199,18 +208,27 @@ class SessionManager(Generic[T]):
         return session_data_object
 
     def load(self, session_id) -> T:
-        validate_session_id(session_id, self._sid_keys)
-        data = self._perform_get(session_id)
-        if data is not None:
-            self._dynamo_set(data, session_id, modified=False)
-            session_object = self._data_type(session_id=session_id,
-                                             idle_timeout_seconds=data.idle_timeout,
-                                             absolute_timeout_seconds=data.absolute_timeout,
-                                             created=datetime.fromisoformat(data.created))
-            session_object.deserialize(data.data)
-            return session_object
+        data = None
+        try:
+            validate_session_id(session_id, self._sid_keys)
+        except BadSignature:
+            if self._bad_session_id_raises:
+                raise InvalidSessionIdError(loggable_session_id(session_id))
+        else:
+            data = self._perform_get(session_id)
+            if data is None and self._bad_session_id_raises:
+                raise SessionNotFoundError(loggable_session_id(session_id))
 
-        return self.null_session_class(session_id=session_id)  # type: ignore
+        if data is None:
+            return self.null_session_class(session_id=session_id)  # type: ignore
+
+        self._dynamo_set(data, session_id, modified=False)
+        session_object = self._data_type(session_id=session_id,
+                                         idle_timeout_seconds=data.idle_timeout,
+                                         absolute_timeout_seconds=data.absolute_timeout,
+                                         created=datetime.fromisoformat(data.created))
+        session_object.deserialize(data.data)
+        return session_object
 
     def save(self, data: T):
         dynamo_data = DynamoData(data.serialize(),
