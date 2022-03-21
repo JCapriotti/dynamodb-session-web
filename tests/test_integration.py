@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from itsdangerous.exc import BadSignature
 from pytest import param
 
 from dynamodb_session_web import NullSessionInstance, SessionManager, SessionInstanceBase
@@ -47,6 +48,30 @@ class TestIntegration:
 
         actual_data = session.load(session_instance.session_id)
         assert actual_data[expected_key] == expected_value
+
+    def test_hmac_sid(self):
+        expected_key = str_param()
+        expected_value = str_param()
+
+        session = create_session_manager(sid_keys=['foo'])
+        session_instance = session.create()
+        session_instance[expected_key] = expected_value
+        session.save(session_instance)
+
+        actual_data = session.load(session_instance.session_id)
+        assert actual_data[expected_key] == expected_value
+
+    def test_hmac_sid_invalid(self):
+        expected_key = str_param()
+        expected_value = str_param()
+
+        session = create_session_manager(sid_keys=['foo'])
+        session_instance = session.create()
+        session_instance[expected_key] = expected_value
+        session.save(session_instance)
+
+        with pytest.raises(BadSignature):
+            session.load('my string.wh6tMHxLgJqB6oY1uT73iMlyrOA')
 
     def test_example_custom_class(self):
         """ Test/Example code showing save/load with a custom session data class """

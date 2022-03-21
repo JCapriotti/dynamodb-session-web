@@ -3,9 +3,11 @@ import json
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from secrets import token_urlsafe
-from typing import Any, Generic, NamedTuple, Optional, Type, TypeVar, overload
+from typing import Any, Generic, List, NamedTuple, Optional, Type, TypeVar, overload
 
 import boto3
+from itsdangerous import Signer
+
 
 DEFAULT_IDLE_TIMEOUT = 7200  # two hours
 DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
@@ -22,8 +24,17 @@ class DynamoData(NamedTuple):
     created: str
 
 
-def create_session_id(byte_length: int) -> str:
+def create_session_id(byte_length: int, keys: List[str]) -> str:
+    if len(keys) > 0:
+        signer = Signer(keys)
+        return signer.sign(token_urlsafe(byte_length)).decode('utf-8')
     return token_urlsafe(byte_length)
+
+
+def validate_session_id(session_id, keys: List[str]) -> None:
+    if len(keys) > 0:
+        signer = Signer(keys)
+        signer.unsign(session_id).decode('utf-8')
 
 
 def current_datetime(datetime_value: datetime = None) -> datetime:
@@ -100,8 +111,9 @@ class NullSessionInstance(SessionInstanceBase):
 class SessionManager(Generic[T]):
     _boto_client = None
     _data_type: Type[T]
-    _idle_timeout = DEFAULT_IDLE_TIMEOUT
-    _absolute_timeout = DEFAULT_ABSOLUTE_TIMEOUT
+    _idle_timeout: int = DEFAULT_IDLE_TIMEOUT
+    _absolute_timeout: int = DEFAULT_ABSOLUTE_TIMEOUT
+    _sid_keys: List[str] = []
 
     null_session_class: Type[SessionInstanceBase] = NullSessionInstance
 
@@ -112,6 +124,7 @@ class SessionManager(Generic[T]):
         self.endpoint_url = kwargs.get('endpoint_url', None)
         self._idle_timeout = kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT)
+        self._sid_keys = kwargs.get('sid_keys', [])
         self._data_type = SessionDictInstance
 
     @overload
@@ -121,6 +134,7 @@ class SessionManager(Generic[T]):
         self.endpoint_url = kwargs.get('endpoint_url', None)
         self._idle_timeout = kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT)
+        self._sid_keys = kwargs.get('sid_keys', [])
         self._data_type = data_type
 
     def __init__(self, data_type: Type[T] = SessionDictInstance, **kwargs) -> None:  # type: ignore
@@ -139,6 +153,7 @@ class SessionManager(Generic[T]):
         self.endpoint_url = kwargs.get('endpoint_url', None)
         self._idle_timeout = kwargs.get('idle_timeout_seconds', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout_seconds', DEFAULT_ABSOLUTE_TIMEOUT)
+        self._sid_keys = kwargs.get('sid_keys', [])
         self._data_type = data_type
 
     def create(self, *, idle_timeout_seconds: int = None, absolute_timeout_seconds: int = None) -> T:
@@ -154,7 +169,7 @@ class SessionManager(Generic[T]):
         """
         idle = self._idle_timeout if idle_timeout_seconds is None else idle_timeout_seconds
         absolute = self._absolute_timeout if absolute_timeout_seconds is None else absolute_timeout_seconds
-        return self._data_type(session_id=create_session_id(self.sid_byte_length),
+        return self._data_type(session_id=create_session_id(self.sid_byte_length, self._sid_keys),
                                idle_timeout_seconds=idle,
                                absolute_timeout_seconds=absolute)
 
@@ -171,7 +186,7 @@ class SessionManager(Generic[T]):
         """
         idle = self._idle_timeout if idle_timeout_seconds is None else idle_timeout_seconds
         absolute = self._absolute_timeout if absolute_timeout_seconds is None else absolute_timeout_seconds
-        sid = create_session_id(self.sid_byte_length)
+        sid = create_session_id(self.sid_byte_length, self._sid_keys)
         session_data_object = self._data_type(session_id=sid,
                                               idle_timeout_seconds=idle,
                                               absolute_timeout_seconds=absolute)
@@ -184,6 +199,7 @@ class SessionManager(Generic[T]):
         return session_data_object
 
     def load(self, session_id) -> T:
+        validate_session_id(session_id, self._sid_keys)
         data = self._perform_get(session_id)
         if data is not None:
             self._dynamo_set(data, session_id, modified=False)
