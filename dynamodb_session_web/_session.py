@@ -34,6 +34,9 @@ def create_session_id(byte_length: int, keys: List[str]) -> str:
 
 
 def validate_session_id(session_id, keys: List[str]) -> None:
+    if not session_id:
+        raise SessionNotFoundError(loggable_session_id(''))
+
     if len(keys) > 0:
         signer = Signer(keys)
         signer.unsign(session_id).decode('utf-8')

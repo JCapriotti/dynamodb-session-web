@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dynamodb-session-web"
-version = "0.2.5"
+version = "0.2.6"
 description = "Contains the core API for a DynamoDB-backed session"
 keywords = ["DynamoDB", "Session", "Web"]
 authors = ["Jason Capriotti <jason.capriotti@gmail.com>"]

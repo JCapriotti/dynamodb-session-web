@@ -21,10 +21,10 @@ TEN_AM = int(datetime(2021, 3, 1, 10, 0, 0, tzinfo=timezone.utc).timestamp())
 ELEVEN_AM = int(datetime(2021, 3, 1, 11, 0, 0, tzinfo=timezone.utc).timestamp())
 FRIENDLY_DT_FORMAT = '%b %d %Y, %I %p'
 
+
 # pylint: disable=no-self-use
 # pylint: disable=too-many-arguments
-
-
+# pylint: disable=too-many-public-methods
 class TestIntegration:
 
     @pytest.fixture(autouse=True)
@@ -355,3 +355,12 @@ class TestIntegration:
 
         assert int(actual_record['expires']) - expected_ttl < 2
         assert datetime.fromisoformat(actual_record['accessed']) - expected_datetime < timedelta(seconds=2)
+
+    def test_empty_session_id_load_raises(self):
+        session = create_session_manager(bad_session_id_raises=True)
+        sid = ''
+        expected_loggable_sid = 'cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce' \
+                                '47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e'
+
+        with pytest.raises(SessionNotFoundError, match=expected_loggable_sid):
+            session.load(sid)
