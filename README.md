@@ -147,6 +147,7 @@ SessionManager(
     sid_byte_length=128,
     table_name='my-dynamodb-table',
     endpoint_url='http://localhost:8000',
+    region_name='us-east-1',
     idle_timeout_seconds=300,
     absolute_timeout_seconds=3600,
 )
@@ -171,6 +172,10 @@ instance.absolute_timeout_seconds = 30
 * Docker
 
 ### Tests
+
+[install `poetry`](https://python-poetry.org), then run `poetry install` to install the dependencies.
+
+To run tests, run `poetry run pytest`
 
 The integration tests will use the `docker-compose.yml` file to create a local DynamoDB instance.
 
