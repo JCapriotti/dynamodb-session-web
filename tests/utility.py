@@ -7,17 +7,18 @@ from dynamodb_session_web import SessionManager, SessionDictInstance
 
 TABLE_NAME = 'app_session'
 LOCAL_ENDPOINT = 'http://localhost:8000'
+LOCAL_REGION_NAME = 'us-east-1'
 
 
 def create_session_manager(**kwargs) -> SessionManager[SessionDictInstance]:
     """
     Creates a SessionCore object configured for integration testing
     """
-    return SessionManager(SessionDictInstance, endpoint_url=LOCAL_ENDPOINT, **kwargs)
+    return SessionManager(SessionDictInstance, endpoint_url=LOCAL_ENDPOINT, region_name=LOCAL_REGION_NAME, **kwargs)
 
 
 def get_dynamo_resource():
-    return boto3.resource('dynamodb', endpoint_url=LOCAL_ENDPOINT)
+    return boto3.resource('dynamodb', endpoint_url=LOCAL_ENDPOINT, region_name=LOCAL_REGION_NAME)
 
 
 def get_dynamo_record(key):

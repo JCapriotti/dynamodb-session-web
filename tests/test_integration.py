@@ -8,7 +8,7 @@ from pytest import param
 
 from dynamodb_session_web import NullSessionInstance, SessionManager, SessionInstanceBase
 from dynamodb_session_web.exceptions import InvalidSessionIdError, SessionNotFoundError
-from .utility import create_session_manager, get_dynamo_record, LOCAL_ENDPOINT, mock_current_datetime, str_param
+from .utility import create_session_manager, get_dynamo_record, LOCAL_ENDPOINT, LOCAL_REGION_NAME, mock_current_datetime, str_param
 
 DEFAULT_IDLE_TIMEOUT = 7200  # two hours
 DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
@@ -95,7 +95,7 @@ class TestIntegration:
             def serialize(self):
                 return json.dumps(asdict(self))
 
-        session = SessionManager(MySession, endpoint_url=LOCAL_ENDPOINT)
+        session = SessionManager(MySession, endpoint_url=LOCAL_ENDPOINT, region_name=LOCAL_REGION_NAME)
         initial_data = session.create()
         initial_data.fruit = 'apple'
         initial_data.color = 'red'

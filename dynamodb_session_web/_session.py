@@ -131,6 +131,7 @@ class SessionManager(Generic[T]):  # pylint: disable=too-many-instance-attribute
         self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
         self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
         self.endpoint_url = kwargs.get('endpoint_url', None)
+        self.region_name = kwargs.get('region_name', None)
         self._idle_timeout = kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT)
         self._sid_keys = kwargs.get('sid_keys', [])
@@ -142,6 +143,7 @@ class SessionManager(Generic[T]):  # pylint: disable=too-many-instance-attribute
         self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
         self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
         self.endpoint_url = kwargs.get('endpoint_url', None)
+        self.region_name = kwargs.get('region_name', None)
         self._idle_timeout = kwargs.get('idle_timeout', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout', DEFAULT_ABSOLUTE_TIMEOUT)
         self._sid_keys = kwargs.get('sid_keys', [])
@@ -156,12 +158,14 @@ class SessionManager(Generic[T]):  # pylint: disable=too-many-instance-attribute
             sid_byte_length - The session id length in bytes. Defaults to 32.
             table_name - The DynamoDB table name. Defaults to app_session.
             endpoint_url - The DynamoDB URL. Defaults to None.
+            region_name - The DynamoDB Region. Defaults to None.
             idle_timeout - The timeout used to expire idle sessions. Defaults to 7200 seconds.
             absolute_timeout - The timeout used for absolute session expiration. Defaults to 43200 seconds.
         """
         self.sid_byte_length = kwargs.get('sid_byte_length', DEFAULT_SESSION_ID_BYTES)
         self.table_name = kwargs.get('table_name', DEFAULT_TABLE)
         self.endpoint_url = kwargs.get('endpoint_url', None)
+        self.region_name = kwargs.get('region_name', None)
         self._idle_timeout = kwargs.get('idle_timeout_seconds', DEFAULT_IDLE_TIMEOUT)
         self._absolute_timeout = kwargs.get('absolute_timeout_seconds', DEFAULT_ABSOLUTE_TIMEOUT)
         self._sid_keys = kwargs.get('sid_keys', [])
@@ -309,6 +313,10 @@ class SessionManager(Generic[T]):  # pylint: disable=too-many-instance-attribute
 
     def boto_client(self):
         if self._boto_client is None:
-            self._boto_client = boto3.client('dynamodb', endpoint_url=self.endpoint_url)
-
+            boto_client_kwargs = {}
+            if self.endpoint_url is not None:
+                boto_client_kwargs["endpoint_url"] = self.endpoint_url
+            if self.region_name is not None:
+                boto_client_kwargs["region_name"] = self.region_name
+            self._boto_client = boto3.client('dynamodb', **boto_client_kwargs)
         return self._boto_client
