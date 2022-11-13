@@ -8,7 +8,14 @@ from pytest import param
 
 from dynamodb_session_web import NullSessionInstance, SessionManager, SessionInstanceBase
 from dynamodb_session_web.exceptions import InvalidSessionIdError, SessionNotFoundError
-from .utility import create_session_manager, get_dynamo_record, LOCAL_ENDPOINT, LOCAL_REGION_NAME, mock_current_datetime, str_param
+from .utility import (
+    create_session_manager,
+    get_dynamo_record,
+    LOCAL_ENDPOINT,
+    LOCAL_REGION_NAME,
+    mock_current_datetime,
+    str_param
+)
 
 DEFAULT_IDLE_TIMEOUT = 7200  # two hours
 DEFAULT_ABSOLUTE_TIMEOUT = 43200  # twelve hours
@@ -22,9 +29,9 @@ ELEVEN_AM = int(datetime(2021, 3, 1, 11, 0, 0, tzinfo=timezone.utc).timestamp())
 FRIENDLY_DT_FORMAT = '%b %d %Y, %I %p'
 
 
-# pylint: disable=no-self-use
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-public-methods
+# noinspection PyClassHasNoInit
 class TestIntegration:
 
     @pytest.fixture(autouse=True)

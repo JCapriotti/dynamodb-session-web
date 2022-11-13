@@ -1,9 +1,8 @@
 import pytest
 from dynamodb_session_web import SessionManager, SessionDictInstance
 
-# pylint: disable=no-self-use
 
-
+# noinspection PyClassHasNoInit
 class TestSessionInstance:
     def test_default_settings(self):
         actual = SessionDictInstance()

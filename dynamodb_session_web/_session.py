@@ -42,13 +42,13 @@ def validate_session_id(session_id, keys: List[str]) -> None:
         signer.unsign(session_id).decode('utf-8')
 
 
-def current_datetime(datetime_value: datetime = None) -> datetime:
+def current_datetime(datetime_value: Optional[datetime] = None) -> datetime:
     if datetime_value is None:
         datetime_value = datetime.now(tz=timezone.utc)
     return datetime_value
 
 
-def current_timestamp(datetime_value: datetime = None) -> int:
+def current_timestamp(datetime_value: Optional[datetime] = None) -> int:
     return int(current_datetime(datetime_value).timestamp())
 
 
@@ -76,7 +76,7 @@ class SessionInstanceBase(ABC):
                  session_id: str = '',
                  idle_timeout_seconds: int = DEFAULT_IDLE_TIMEOUT,
                  absolute_timeout_seconds: int = DEFAULT_ABSOLUTE_TIMEOUT,
-                 created: datetime = None):
+                 created: Optional[datetime] = None):
         self.session_id = session_id
         self.idle_timeout_seconds = int(idle_timeout_seconds)
         self.absolute_timeout_seconds = int(absolute_timeout_seconds)
@@ -172,7 +172,9 @@ class SessionManager(Generic[T]):  # pylint: disable=too-many-instance-attribute
         self._bad_session_id_raises = kwargs.get('bad_session_id_raises', False)
         self._data_type = data_type
 
-    def create(self, *, idle_timeout_seconds: int = None, absolute_timeout_seconds: int = None) -> T:
+    def create(self, *,
+               idle_timeout_seconds: Optional[int] = None,
+               absolute_timeout_seconds: Optional[int] = None) -> T:
         """ Creates a session instance. At this point, no session record is persisted.
 
         :param idle_timeout_seconds: Idle timeout specific to this session instance.
@@ -189,7 +191,9 @@ class SessionManager(Generic[T]):  # pylint: disable=too-many-instance-attribute
                                idle_timeout_seconds=idle,
                                absolute_timeout_seconds=absolute)
 
-    def create_and_save(self, *, idle_timeout_seconds: int = None, absolute_timeout_seconds: int = None) -> T:
+    def create_and_save(self, *,
+                        idle_timeout_seconds: Optional[int] = None,
+                        absolute_timeout_seconds: Optional[int] = None) -> T:
         """ Creates a session instance, and persists it in the database.
 
         :param idle_timeout_seconds: Idle timeout specific to this session instance.
